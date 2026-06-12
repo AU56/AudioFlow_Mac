@@ -1,0 +1,33 @@
+name: Build AudioFlow macOS Client
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install audio tools
+        run: |
+          brew install ffmpeg sox
+
+      - name: Build app
+        run: |
+          cd "内部文件_不要改"
+          chmod +x build_mac_app.sh
+          ./build_mac_app.sh
+          cp AudioFlow_Studio_Mac.zip ../AudioFlow_Studio_Mac.zip
+
+      - name: Upload customer package
+        uses: actions/upload-artifact@v4
+        with:
+          name: AudioFlow_Studio_Mac
+          path: AudioFlow_Studio_Mac.zip
