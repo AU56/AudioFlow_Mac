@@ -2,6 +2,9 @@ name: Build AudioFlow macOS Client
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   build-macos:
@@ -21,10 +24,15 @@ jobs:
 
       - name: Build app
         run: |
-          cd "内部文件_不要改"
+          BUILD_DIR="$(dirname "$(find . -maxdepth 3 -name build_mac_app.sh -print -quit)")"
+          if [ -z "$BUILD_DIR" ] || [ "$BUILD_DIR" = "." ]; then
+            echo "build_mac_app.sh not found"
+            exit 1
+          fi
+          cd "$BUILD_DIR"
           chmod +x build_mac_app.sh
           ./build_mac_app.sh
-          cp AudioFlow_Studio_Mac.zip ../AudioFlow_Studio_Mac.zip
+          cp AudioFlow_Studio_Mac.zip "$GITHUB_WORKSPACE/AudioFlow_Studio_Mac.zip"
 
       - name: Upload customer package
         uses: actions/upload-artifact@v4

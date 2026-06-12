@@ -6,7 +6,6 @@ cd "$(dirname "$0")"
 APP_NAME="AudioFlow Studio"
 DIST_APP="dist/${APP_NAME}.app"
 ZIP_NAME="AudioFlow_Studio_Mac.zip"
-ICON_ARGS=()
 
 echo "[AudioFlow] Building macOS app..."
 
@@ -35,8 +34,20 @@ FFMPEG_BIN="$(command -v ffmpeg)"
 FFPROBE_BIN="$(command -v ffprobe)"
 SOX_BIN="$(command -v sox)"
 
-if [ -f "assets/audioflow.icns" ]; then
-  ICON_ARGS=(--icon "assets/audioflow.icns")
+if [ ! -f "assets/audioflow.icns" ] && [ -f "assets/audioflow_256.png" ] && command -v iconutil >/dev/null 2>&1; then
+  rm -rf assets/audioflow.iconset
+  mkdir -p assets/audioflow.iconset
+  sips -z 16 16     assets/audioflow_256.png --out assets/audioflow.iconset/icon_16x16.png >/dev/null
+  sips -z 32 32     assets/audioflow_256.png --out assets/audioflow.iconset/icon_16x16@2x.png >/dev/null
+  sips -z 32 32     assets/audioflow_256.png --out assets/audioflow.iconset/icon_32x32.png >/dev/null
+  sips -z 64 64     assets/audioflow_256.png --out assets/audioflow.iconset/icon_32x32@2x.png >/dev/null
+  sips -z 128 128   assets/audioflow_256.png --out assets/audioflow.iconset/icon_128x128.png >/dev/null
+  sips -z 256 256   assets/audioflow_256.png --out assets/audioflow.iconset/icon_128x128@2x.png >/dev/null
+  sips -z 256 256   assets/audioflow_256.png --out assets/audioflow.iconset/icon_256x256.png >/dev/null
+  sips -z 512 512   assets/audioflow_256.png --out assets/audioflow.iconset/icon_256x256@2x.png >/dev/null
+  sips -z 512 512   assets/audioflow_256.png --out assets/audioflow.iconset/icon_512x512.png >/dev/null
+  cp assets/audioflow_256.png assets/audioflow.iconset/icon_512x512@2x.png
+  iconutil -c icns assets/audioflow.iconset -o assets/audioflow.icns
 fi
 
 VENV_DIR=".venv-build-macos"
@@ -49,16 +60,28 @@ export PATH="$PWD/$VENV_DIR/bin:$(dirname "$PYTHON_BIN"):$PATH"
 
 rm -rf build dist "$ZIP_NAME"
 
-pyinstaller --noconfirm --clean --windowed \
-  --name "$APP_NAME" \
-  "${ICON_ARGS[@]}" \
-  --add-binary "${FFMPEG_BIN}:tools/macos" \
-  --add-binary "${FFPROBE_BIN}:tools/macos" \
-  --add-binary "${SOX_BIN}:tools/macos" \
-  --add-data "assets/audioflow.ico:assets" \
-  --add-data "schemes.py:." \
-  --add-data "settings.py:." \
-  main.py
+if [ -f "assets/audioflow.icns" ]; then
+  pyinstaller --noconfirm --clean --windowed \
+    --name "$APP_NAME" \
+    --icon "assets/audioflow.icns" \
+    --add-binary "${FFMPEG_BIN}:tools/macos" \
+    --add-binary "${FFPROBE_BIN}:tools/macos" \
+    --add-binary "${SOX_BIN}:tools/macos" \
+    --add-data "assets/audioflow.ico:assets" \
+    --add-data "schemes.py:." \
+    --add-data "settings.py:." \
+    main.py
+else
+  pyinstaller --noconfirm --clean --windowed \
+    --name "$APP_NAME" \
+    --add-binary "${FFMPEG_BIN}:tools/macos" \
+    --add-binary "${FFPROBE_BIN}:tools/macos" \
+    --add-data "assets/audioflow.ico:assets" \
+    --add-binary "${SOX_BIN}:tools/macos" \
+    --add-data "schemes.py:." \
+    --add-data "settings.py:." \
+    main.py
+fi
 
 if [ ! -d "$DIST_APP" ]; then
   echo "ERROR: app build failed."
