@@ -395,8 +395,8 @@ class MainWindow(QMainWindow):
             b=QPushButton(text); b.clicked.connect(cb); col.addWidget(b)
         col.addStretch(1); seq.addLayout(col); ol.addLayout(seq); lay.addWidget(order_box)
 
-        category_box=QFrame(); category_box.setObjectName("card"); category_box.setMaximumHeight(128); cl=QVBoxLayout(category_box); cl.setContentsMargins(10,8,10,8); cl.setSpacing(6)
-        cl.addWidget(QLabel("常用风格入口"))
+        category_box=QFrame(); category_box.setObjectName("card"); category_box.setFixedHeight(122); cl=QVBoxLayout(category_box); cl.setContentsMargins(10,8,10,8); cl.setSpacing(6)
+        cl.addWidget(QLabel("常用风格入口（未实测达标前不标推荐）"))
         cgrid=QGridLayout(); cgrid.setHorizontalSpacing(8); cgrid.setVerticalSpacing(8)
         for i, code in enumerate(CATEGORY_ORDER):
             preset=CATEGORY_PRESETS[code]
@@ -409,8 +409,9 @@ class MainWindow(QMainWindow):
         cl.addLayout(cgrid)
         self.category_desc=QLabel("")
         self.category_desc.setObjectName("muted")
-        self.category_desc.setWordWrap(True)
-        self.category_desc.setMaximumHeight(34)
+        self.category_desc.setWordWrap(False)
+        self.category_desc.setMinimumHeight(18)
+        self.category_desc.setMaximumHeight(18)
         cl.addWidget(self.category_desc)
         lay.addWidget(category_box)
 
@@ -540,7 +541,7 @@ class MainWindow(QMainWindow):
             btn.setObjectName("")
             btn.style().unpolish(btn); btn.style().polish(btn)
         if hasattr(self, "category_desc"):
-            self.category_desc.setText("已切到手动 / 自定义方案。")
+            self.category_desc.setText("手动方案｜检测状态：按客户实测结果为准")
         self.refresh_order_ui()
         self.log(f"已选择{label}：方案 {'-'.join(map(str, self.selected_order))}")
     def apply_category_template(self, code: str):
@@ -555,12 +556,15 @@ class MainWindow(QMainWindow):
             if self.format_combo.itemText(i).upper().startswith(fmt):
                 self.format_combo.setCurrentIndex(i)
                 break
-        self.category_desc.setText(f"{preset['name']}：{preset['desc']}｜当前方案 {'-'.join(map(str, self.selected_order))}｜输出 {fmt}")
+        score = preset.get("tested_score")
+        status = f"已测 {score}%+" if isinstance(score, int) and score >= 80 else "待外部检测实测"
+        self.category_desc.setText(f"{preset['name']}｜方案 {'-'.join(map(str, self.selected_order))}｜输出 {fmt}｜{status}")
+        self.category_desc.setToolTip(f"{preset['name']}：{preset['desc']}\n方案 {'-'.join(map(str, self.selected_order))}｜输出 {fmt}｜检测状态：{status}")
         for c, btn in self.category_buttons.items():
             btn.setObjectName("primary" if c == code else "")
             btn.style().unpolish(btn); btn.style().polish(btn)
         self.refresh_order_ui()
-        self.log(f"已应用常用入口：{preset['name']}，方案 {'-'.join(map(str, self.selected_order))}，输出 {fmt}")
+        self.log(f"已应用常用入口：{preset['name']}，方案 {'-'.join(map(str, self.selected_order))}，输出 {fmt}，检测状态：{status}")
     def toggle_advanced_schemes(self):
         visible = not self.advanced_scroll.isVisible()
         self.advanced_scroll.setVisible(visible)
@@ -597,7 +601,7 @@ class MainWindow(QMainWindow):
         if self.selected_category:
             self.selected_category=None
             if hasattr(self, "category_desc"):
-                self.category_desc.setText("已切回手动方案：按当前勾选顺序处理，最终只输出一个文件。")
+                self.category_desc.setText("手动方案｜按当前勾选顺序处理｜检测状态：按客户实测结果为准")
             for btn in getattr(self, "category_buttons", {}).values():
                 btn.setObjectName("")
                 btn.style().unpolish(btn); btn.style().polish(btn)

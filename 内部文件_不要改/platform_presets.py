@@ -12,6 +12,7 @@ CATEGORY_PRESETS = {
         "desc": "常用人声链路，先保留原曲细节，再做空气感收尾，适合多数流行和抒情歌曲。",
         "schemes": [1, 9],
         "format": "WAV",
+        "tested_score": None,
     },
     "INSTR": {
         "code": "INSTR",
@@ -20,6 +21,7 @@ CATEGORY_PRESETS = {
         "desc": "单方案轻处理，优先保留低频、高频、器乐尾音和原始动态。",
         "schemes": [1],
         "format": "WAV",
+        "tested_score": None,
     },
     "DJ": {
         "code": "DJ",
@@ -28,6 +30,7 @@ CATEGORY_PRESETS = {
         "desc": "电音低频特化，减少多方案叠加带来的波形扁平化，保留鼓点弹性。",
         "schemes": [17],
         "format": "WAV",
+        "tested_score": None,
     },
     "FOLK": {
         "code": "FOLK",
@@ -36,6 +39,7 @@ CATEGORY_PRESETS = {
         "desc": "轻补空气感和高频细节，适合古风、民谣、轻编曲和细节较多的歌曲。",
         "schemes": [1, 5],
         "format": "WAV",
+        "tested_score": None,
     },
     "RAP": {
         "code": "RAP",
@@ -44,6 +48,7 @@ CATEGORY_PRESETS = {
         "desc": "节奏类轻母带，保留鼓点冲击和人声清晰度，适合说唱、快歌。",
         "schemes": [1, 16],
         "format": "WAV",
+        "tested_score": None,
     },
     "BRIGHT": {
         "code": "BRIGHT",
@@ -52,6 +57,7 @@ CATEGORY_PRESETS = {
         "desc": "控制齿音和刺耳高频，同时补回亮度，适合高音、女声和偏亮歌曲。",
         "schemes": [1, 4],
         "format": "WAV",
+        "tested_score": None,
     },
     "CURVE": {
         "code": "CURVE",
@@ -60,6 +66,7 @@ CATEGORY_PRESETS = {
         "desc": "整理旋律线和中频轮廓，适合曲谱检测偏低或主旋律不够清楚的素材。",
         "schemes": [15],
         "format": "WAV",
+        "tested_score": None,
     },
     "MASTER": {
         "code": "MASTER",
@@ -68,6 +75,7 @@ CATEGORY_PRESETS = {
         "desc": "轻量统一响度和空间细节，适合已经修得不错、只需要最后整理的成品。",
         "schemes": [16],
         "format": "WAV",
+        "tested_score": None,
     },
 }
 
