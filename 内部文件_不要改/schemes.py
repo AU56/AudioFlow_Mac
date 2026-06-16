@@ -246,8 +246,8 @@ SCHEMES = [
 
 SCHEME_BY_ID = {int(s["index"]): s for s in SCHEMES}
 
-# Keep the UI focused on the core 14 schemes; the merged ones stay available for
-# compatibility but are not shown by default.
-DISPLAY_SCHEME_IDS = [1, 2, 4, 5, 7, 8, 9, 10, 12, 13, 14, 15, 17, 18]
+# Show the complete scheme library. Style presets can still choose shorter
+# chains, but advanced users should see all 18 available routes.
+DISPLAY_SCHEME_IDS = list(range(1, 19))
 DISPLAY_SCHEMES = [s for s in SCHEMES if int(s["index"]) in DISPLAY_SCHEME_IDS]
-MERGED_SCHEME_IDS = [3, 6, 11, 16]
+MERGED_SCHEME_IDS = []

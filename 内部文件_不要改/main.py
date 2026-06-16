@@ -131,7 +131,7 @@ INTRO_TEXT = """使用说明
 
 1. 添加歌曲：建议导入 MP3，最终统一导出 WAV。
 2. 常用入口：按歌曲类型快速套用方案，也可以直接在方案库里手动勾选。
-3. 高级方案：主界面保留 14 个核心方案，重复方向已经折进风格推荐和内部兼容链路。
+3. 方案库：主界面保留 18 套完整方案，常用风格入口会自动套用对应策略。
 4. 处理顺序：方案会按顺序逐步处理同一首歌，内部临时传递，最终只输出一个成品文件。
 5. 默认优先：人声歌曲先用“人声流行”，纯音乐先用“纯音乐器乐”，低频重的歌先用“DJ电音”。
 6. 组合方案：只在单风格不够时再手动叠加，程序会减少中间重复收尾，避免波形被压平。
@@ -396,7 +396,7 @@ class MainWindow(QMainWindow):
         col.addStretch(1); seq.addLayout(col); ol.addLayout(seq); lay.addWidget(order_box)
 
         category_box=QFrame(); category_box.setObjectName("card"); category_box.setFixedHeight(122); cl=QVBoxLayout(category_box); cl.setContentsMargins(10,8,10,8); cl.setSpacing(6)
-        cl.addWidget(QLabel("常用风格入口（未实测达标前不标推荐）"))
+        cl.addWidget(QLabel("风格策略入口"))
         cgrid=QGridLayout(); cgrid.setHorizontalSpacing(8); cgrid.setVerticalSpacing(8)
         for i, code in enumerate(CATEGORY_ORDER):
             preset=CATEGORY_PRESETS[code]
@@ -415,7 +415,7 @@ class MainWindow(QMainWindow):
         cl.addWidget(self.category_desc)
         lay.addWidget(category_box)
 
-        adv_head=QHBoxLayout(); adv_title=QLabel(f"方案库（{len(DISPLAY_SCHEMES)} 个核心方案）"); adv_title.setObjectName("muted"); adv_head.addWidget(adv_title); adv_head.addStretch(1)
+        adv_head=QHBoxLayout(); adv_title=QLabel(f"方案库（{len(DISPLAY_SCHEMES)} 套完整方案）"); adv_title.setObjectName("muted"); adv_head.addWidget(adv_title); adv_head.addStretch(1)
         self.advanced_toggle=QPushButton("收起方案库"); self.advanced_toggle.clicked.connect(self.toggle_advanced_schemes); adv_head.addWidget(self.advanced_toggle)
         reset_btn=QPushButton("恢复默认"); reset_btn.clicked.connect(lambda: self.apply_category_template("POP")); adv_head.addWidget(reset_btn); lay.addLayout(adv_head)
         scroll=QScrollArea(); scroll.setWidgetResizable(True); scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff); scroll.setFrameShape(QFrame.NoFrame); scroll.setFocusPolicy(Qt.NoFocus); scroll.viewport().setStyleSheet("background:#071426;border:0;")
@@ -541,7 +541,7 @@ class MainWindow(QMainWindow):
             btn.setObjectName("")
             btn.style().unpolish(btn); btn.style().polish(btn)
         if hasattr(self, "category_desc"):
-            self.category_desc.setText("手动方案｜检测状态：按客户实测结果为准")
+            self.category_desc.setText("手动方案｜按当前勾选顺序处理")
         self.refresh_order_ui()
         self.log(f"已选择{label}：方案 {'-'.join(map(str, self.selected_order))}")
     def apply_category_template(self, code: str):
@@ -556,15 +556,13 @@ class MainWindow(QMainWindow):
             if self.format_combo.itemText(i).upper().startswith(fmt):
                 self.format_combo.setCurrentIndex(i)
                 break
-        score = preset.get("tested_score")
-        status = f"已测 {score}%+" if isinstance(score, int) and score >= 80 else "待外部检测实测"
-        self.category_desc.setText(f"{preset['name']}｜方案 {'-'.join(map(str, self.selected_order))}｜输出 {fmt}｜{status}")
-        self.category_desc.setToolTip(f"{preset['name']}：{preset['desc']}\n方案 {'-'.join(map(str, self.selected_order))}｜输出 {fmt}｜检测状态：{status}")
+        self.category_desc.setText(f"{preset['name']}｜方案 {'-'.join(map(str, self.selected_order))}｜输出 {fmt}")
+        self.category_desc.setToolTip(f"{preset['name']}：{preset['desc']}\n方案 {'-'.join(map(str, self.selected_order))}｜输出 {fmt}")
         for c, btn in self.category_buttons.items():
             btn.setObjectName("primary" if c == code else "")
             btn.style().unpolish(btn); btn.style().polish(btn)
         self.refresh_order_ui()
-        self.log(f"已应用常用入口：{preset['name']}，方案 {'-'.join(map(str, self.selected_order))}，输出 {fmt}，检测状态：{status}")
+        self.log(f"已应用风格策略：{preset['name']}，方案 {'-'.join(map(str, self.selected_order))}，输出 {fmt}")
     def toggle_advanced_schemes(self):
         visible = not self.advanced_scroll.isVisible()
         self.advanced_scroll.setVisible(visible)
@@ -601,7 +599,7 @@ class MainWindow(QMainWindow):
         if self.selected_category:
             self.selected_category=None
             if hasattr(self, "category_desc"):
-                self.category_desc.setText("手动方案｜按当前勾选顺序处理｜检测状态：按客户实测结果为准")
+                self.category_desc.setText("手动方案｜按当前勾选顺序处理")
             for btn in getattr(self, "category_buttons", {}).values():
                 btn.setObjectName("")
                 btn.style().unpolish(btn); btn.style().polish(btn)
