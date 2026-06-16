@@ -130,7 +130,7 @@ class ActivationDialog(QDialog):
 INTRO_TEXT = """使用说明
 
 1. 添加歌曲：建议导入 MP3，最终统一导出 WAV。
-2. 风格推荐：按歌曲类型选择即可，常用入口有人声流行、纯音乐器乐、DJ电音、古风民谣、说唱节奏。
+2. 常用入口：按歌曲类型快速套用方案，也可以直接在方案库里手动勾选。
 3. 高级方案：主界面保留 14 个核心方案，重复方向已经折进风格推荐和内部兼容链路。
 4. 处理顺序：方案会按顺序逐步处理同一首歌，内部临时传递，最终只输出一个成品文件。
 5. 默认优先：人声歌曲先用“人声流行”，纯音乐先用“纯音乐器乐”，低频重的歌先用“DJ电音”。
@@ -387,14 +387,21 @@ class MainWindow(QMainWindow):
         lay.addWidget(btn)
         return card
     def _build_middle(self):
-        panel,lay=self._panel("02 风格方案｜一键处理")
-        category_box=QFrame(); category_box.setObjectName("card"); category_box.setMaximumHeight(168); cl=QVBoxLayout(category_box); cl.setContentsMargins(10,8,10,8); cl.setSpacing(6)
-        cl.addWidget(QLabel("风格分类推荐"))
+        panel,lay=self._panel("02 AI歌曲真人化｜顺序方案库")
+        order_box=QFrame(); order_box.setObjectName("card"); ol=QVBoxLayout(order_box); ol.setContentsMargins(10,8,10,8); ol.setSpacing(6)
+        order=QHBoxLayout(); order.addWidget(QLabel("已选顺序：")); self.order_edit=QLineEdit(); self.order_edit.setReadOnly(True); order.addWidget(self.order_edit,1); ol.addLayout(order)
+        seq=QHBoxLayout(); self.seq_list=QListWidget(); self.seq_list.setMaximumHeight(104); seq.addWidget(self.seq_list,1); col=QVBoxLayout()
+        for text,cb in [("上移",lambda:self.move_selected(-1)),("下移",lambda:self.move_selected(1)),("移除",self.remove_scheme_from_order)]:
+            b=QPushButton(text); b.clicked.connect(cb); col.addWidget(b)
+        col.addStretch(1); seq.addLayout(col); ol.addLayout(seq); lay.addWidget(order_box)
+
+        category_box=QFrame(); category_box.setObjectName("card"); category_box.setMaximumHeight(128); cl=QVBoxLayout(category_box); cl.setContentsMargins(10,8,10,8); cl.setSpacing(6)
+        cl.addWidget(QLabel("常用风格入口"))
         cgrid=QGridLayout(); cgrid.setHorizontalSpacing(8); cgrid.setVerticalSpacing(8)
         for i, code in enumerate(CATEGORY_ORDER):
             preset=CATEGORY_PRESETS[code]
             b=QPushButton(preset["short"])
-            b.setMinimumHeight(34)
+            b.setMinimumHeight(32)
             b.setToolTip(preset["desc"])
             b.clicked.connect(lambda _checked=False, c=code: self.apply_category_template(c))
             self.category_buttons[code]=b
@@ -403,24 +410,18 @@ class MainWindow(QMainWindow):
         self.category_desc=QLabel("")
         self.category_desc.setObjectName("muted")
         self.category_desc.setWordWrap(True)
+        self.category_desc.setMaximumHeight(34)
         cl.addWidget(self.category_desc)
         lay.addWidget(category_box)
 
-        order_box=QFrame(); order_box.setObjectName("card"); ol=QVBoxLayout(order_box); ol.setContentsMargins(10,8,10,8); ol.setSpacing(4)
-        order=QHBoxLayout(); order.addWidget(QLabel("当前处理顺序")); self.order_edit=QLineEdit(); self.order_edit.setReadOnly(True); order.addWidget(self.order_edit,1); ol.addLayout(order)
-        seq=QHBoxLayout(); self.seq_list=QListWidget(); self.seq_list.setMaximumHeight(66); seq.addWidget(self.seq_list,1); col=QVBoxLayout()
-        for text,cb in [("上移",lambda:self.move_selected(-1)),("下移",lambda:self.move_selected(1)),("移除",self.remove_scheme_from_order)]:
-            b=QPushButton(text); b.clicked.connect(cb); col.addWidget(b)
-        col.addStretch(1); seq.addLayout(col); ol.addLayout(seq); lay.addWidget(order_box)
-
-        adv_head=QHBoxLayout(); adv_title=QLabel(f"高级核心方案（{len(DISPLAY_SCHEMES)}）"); adv_title.setObjectName("muted"); adv_head.addWidget(adv_title); adv_head.addStretch(1)
-        self.advanced_toggle=QPushButton("展开高级方案"); self.advanced_toggle.clicked.connect(self.toggle_advanced_schemes); adv_head.addWidget(self.advanced_toggle)
-        reset_btn=QPushButton("恢复推荐"); reset_btn.clicked.connect(lambda: self.apply_category_template("POP")); adv_head.addWidget(reset_btn); lay.addLayout(adv_head)
+        adv_head=QHBoxLayout(); adv_title=QLabel(f"方案库（{len(DISPLAY_SCHEMES)} 个核心方案）"); adv_title.setObjectName("muted"); adv_head.addWidget(adv_title); adv_head.addStretch(1)
+        self.advanced_toggle=QPushButton("收起方案库"); self.advanced_toggle.clicked.connect(self.toggle_advanced_schemes); adv_head.addWidget(self.advanced_toggle)
+        reset_btn=QPushButton("恢复默认"); reset_btn.clicked.connect(lambda: self.apply_category_template("POP")); adv_head.addWidget(reset_btn); lay.addLayout(adv_head)
         scroll=QScrollArea(); scroll.setWidgetResizable(True); scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff); scroll.setFrameShape(QFrame.NoFrame); scroll.setFocusPolicy(Qt.NoFocus); scroll.viewport().setStyleSheet("background:#071426;border:0;")
         box=QWidget(); box.setStyleSheet("background:#071426;border:0;"); sg=QGridLayout(box); sg.setSpacing(10); sg.setContentsMargins(0,0,0,0)
         for i,s in enumerate(DISPLAY_SCHEMES):
             card=SchemeCard(s, int(s["index"]) in self.selected_order); card.setFocusPolicy(Qt.NoFocus); card.toggled.connect(self.on_card_toggled); self.cards[int(s["index"])]=card; sg.addWidget(card, i//4, i%4)
-        scroll.setWidget(box); self.advanced_scroll=scroll; self.advanced_scroll.setVisible(False); lay.addWidget(scroll,1)
+        scroll.setWidget(box); self.advanced_scroll=scroll; self.advanced_scroll.setVisible(True); lay.addWidget(scroll,1)
         return panel
     def _build_right(self):
         panel,lay=self._panel("03 输出 / 任务队列")
@@ -539,7 +540,7 @@ class MainWindow(QMainWindow):
             btn.setObjectName("")
             btn.style().unpolish(btn); btn.style().polish(btn)
         if hasattr(self, "category_desc"):
-            self.category_desc.setText("已切到手动 / 自定义组合。")
+            self.category_desc.setText("已切到手动 / 自定义方案。")
         self.refresh_order_ui()
         self.log(f"已选择{label}：方案 {'-'.join(map(str, self.selected_order))}")
     def apply_category_template(self, code: str):
@@ -554,16 +555,16 @@ class MainWindow(QMainWindow):
             if self.format_combo.itemText(i).upper().startswith(fmt):
                 self.format_combo.setCurrentIndex(i)
                 break
-        self.category_desc.setText(f"{preset['name']}：{preset['desc']}｜方案 {'-'.join(map(str, self.selected_order))}｜输出 {fmt}")
+        self.category_desc.setText(f"{preset['name']}：{preset['desc']}｜当前方案 {'-'.join(map(str, self.selected_order))}｜输出 {fmt}")
         for c, btn in self.category_buttons.items():
             btn.setObjectName("primary" if c == code else "")
             btn.style().unpolish(btn); btn.style().polish(btn)
         self.refresh_order_ui()
-        self.log(f"已应用分类推荐：{preset['name']}，方案 {'-'.join(map(str, self.selected_order))}，输出 {fmt}")
+        self.log(f"已应用常用入口：{preset['name']}，方案 {'-'.join(map(str, self.selected_order))}，输出 {fmt}")
     def toggle_advanced_schemes(self):
         visible = not self.advanced_scroll.isVisible()
         self.advanced_scroll.setVisible(visible)
-        self.advanced_toggle.setText("收起高级方案" if visible else "展开高级方案")
+        self.advanced_toggle.setText("收起方案库" if visible else "展开方案库")
     def refresh_file_list(self):
         self.file_list.clear(); total=0; dur=0
         for f in self.files:
@@ -586,7 +587,7 @@ class MainWindow(QMainWindow):
             used={sid for variant in self.selected_variants for sid in variant}
             for sid,card in self.cards.items(): card.set_checked(sid in used)
             return
-        self.order_edit.setText("-".join(map(str,self.selected_order))+"（只读）")
+        self.order_edit.setText("-".join(map(str,self.selected_order))+"（最终只输出一个文件）")
         self.seq_list.clear()
         for i,sid in enumerate(self.selected_order,1):
             s=SCHEME_BY_ID[sid]; self.seq_list.addItem(f"{i:02d}.  {sid:02d}  方案{sid:02d}｜{s['name']}")
