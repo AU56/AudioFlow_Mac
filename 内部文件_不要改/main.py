@@ -84,7 +84,7 @@ class DropArea(QFrame):
         self.setMinimumHeight(150)
         lay = QVBoxLayout(self); lay.setAlignment(Qt.AlignCenter)
         icon = QLabel("⇧"); icon.setAlignment(Qt.AlignCenter); icon.setStyleSheet("font-size:42px;color:#78c8ff;")
-        text = QLabel("AI歌曲建议使用 MP3 格式\nWAV 可导入，但修复方案要选轻一点，避免跑偏")
+        text = QLabel("AI歌曲请使用 MP3 格式\n最终默认导出 WAV 成品")
         text.setAlignment(Qt.AlignCenter); text.setObjectName("blue")
         lay.addWidget(icon); lay.addWidget(text)
     def dragEnterEvent(self, e: QDragEnterEvent):
@@ -429,7 +429,7 @@ class MainWindow(QMainWindow):
         self.pipeline_radio=QRadioButton("顺序流水线处理，最终只输出一个文件")
         self.pipeline_radio.setChecked(True)
         self.pipeline_radio.setVisible(False)
-        row=QHBoxLayout(); row.addWidget(QLabel("输出格式：")); self.format_combo=QComboBox(); self.format_combo.addItems(["WAV", "小体积MP3"]); self.format_combo.setToolTip("WAV 保留最高质量；小体积MP3 会控制体积，适合需要快速上传或试听的场景。"); row.addWidget(self.format_combo); row.addWidget(QLabel("并发数：")); self.worker_spin=QSpinBox(); self.worker_spin.setRange(1,4); self.worker_spin.setValue(3); row.addWidget(self.worker_spin); row.addStretch(1); lay.addLayout(row)
+        row=QHBoxLayout(); row.addWidget(QLabel("输出格式：")); self.format_combo=QComboBox(); self.format_combo.addItems(["WAV"]); self.format_combo.setToolTip("主修歌流程固定导出 WAV 成品。"); row.addWidget(self.format_combo); row.addWidget(QLabel("并发数：")); self.worker_spin=QSpinBox(); self.worker_spin.setRange(1,4); self.worker_spin.setValue(3); row.addWidget(self.worker_spin); row.addStretch(1); lay.addLayout(row)
         out=QHBoxLayout(); out.addWidget(QLabel("输出目录：")); self.out_edit=QLineEdit(str(self.output_dir)); out.addWidget(self.out_edit,1); browse=QPushButton("浏览"); browse.clicked.connect(self.choose_output_dir); out.addWidget(browse); lay.addLayout(out)
         self.start_btn=QPushButton("按当前方案开始"); self.start_btn.setObjectName("primary"); self.stop_btn=QPushButton("停止队列"); self.stop_btn.setObjectName("danger"); self.open_dir_btn=QPushButton("打开输出目录")
         self.start_btn.clicked.connect(self.start_processing); self.stop_btn.clicked.connect(self.stop_processing); self.open_dir_btn.clicked.connect(self.open_output_dir)
@@ -500,15 +500,21 @@ class MainWindow(QMainWindow):
             self.update_dialog = None
         self.log(f"后台已准备新版 {version}，关闭软件后自动替换。")
     def add_files(self):
-        files,_=QFileDialog.getOpenFileNames(self,"选择音频",str(Path.home()),"Audio Files (*.mp3 *.wav)"); self.add_paths(files)
+        files,_=QFileDialog.getOpenFileNames(self,"选择 MP3 音频",str(Path.home()),"MP3 Audio (*.mp3)"); self.add_paths(files)
     def add_folder(self):
         d=QFileDialog.getExistingDirectory(self,"选择文件夹",str(Path.home()));
         if d: self.add_paths([d])
     def add_paths(self,paths):
+        skipped = []
+        for raw in paths:
+            p = Path(str(raw).strip().strip('"')).expanduser()
+            if p.is_file() and p.suffix.lower() != ".mp3":
+                skipped.append(p.name)
         new=collect_audio_files(paths); old={str(p).lower() for p in self.files}
-        wav_count = len([p for p in new if p.suffix.lower() == ".wav"])
-        if wav_count:
-            self.log(f"已导入 WAV：{wav_count} 个。建议使用轻处理方案，避免跑调或曲谱受损。")
+        if skipped:
+            sample = "、".join(skipped[:3])
+            more = f" 等 {len(skipped)} 个" if len(skipped) > 3 else ""
+            self.log(f"已跳过非 MP3 文件：{sample}{more}")
         for f in new:
             if str(f).lower() not in old: self.files.append(f); old.add(str(f).lower())
         self.refresh_file_list();
@@ -551,11 +557,8 @@ class MainWindow(QMainWindow):
         self.selected_category = code
         self.selected_variants = None
         self.selected_order = list(preset["schemes"])
-        fmt = str(preset.get("format") or "WAV").upper()
-        for i in range(self.format_combo.count()):
-            if self.format_combo.itemText(i).upper().startswith(fmt):
-                self.format_combo.setCurrentIndex(i)
-                break
+        fmt = "WAV"
+        self.format_combo.setCurrentIndex(0)
         self.category_desc.setText(f"{preset['name']}｜方案 {'-'.join(map(str, self.selected_order))}｜输出 {fmt}")
         self.category_desc.setToolTip(f"{preset['name']}：{preset['desc']}\n方案 {'-'.join(map(str, self.selected_order))}｜输出 {fmt}")
         for c, btn in self.category_buttons.items():
@@ -629,7 +632,7 @@ class MainWindow(QMainWindow):
         if not self.files: QMessageBox.warning(self,"缺少素材","请先添加或拖拽音频。"); return
         if not self.selected_order: QMessageBox.warning(self,"缺少方案","请至少选择一个方案。"); return
         out=Path(self.out_edit.text()).resolve(); mode="pipeline"; workers=self.worker_spin.value(); self.start_btn.setEnabled(False); self.progress.setValue(0)
-        fmt = "mp3" if self.format_combo.currentText().upper().startswith("MP3") else "wav"
+        fmt = "wav"
         self.worker=ProcessWorker(self.files,out,self.selected_order,fmt,mode,workers=workers,variants=None,platform_code=None); self.worker.log.connect(self.log); self.worker.progress.connect(lambda p,s:(self.progress.setValue(p),self.status.setText(s))); self.worker.finishedOk.connect(self.on_finished); self.worker.failed.connect(self.on_failed); self.worker.start()
     def stop_processing(self):
         if self.worker: self.worker.request_stop(); self.log("已请求停止。")

@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "AudioFlow Studio"
-APP_VERSION = "3.6.6"
+APP_VERSION = "3.6.7"
 
 PUBLIC_LICENSE_SERVER_URL = os.getenv("AUDIOFLOW_LICENSE_SERVER", "http://122.51.121.200:13706")
 LOCAL_LICENSE_SERVER_URL = "http://127.0.0.1:5000"
@@ -19,7 +19,7 @@ UPDATE_INFO_URL = os.getenv(
 
 CONTACT_TEXT = "问题咨询：Zhwdh141319\n备注：AI原创"
 VERIFY_SECRET = os.getenv("AUDIOFLOW_VERIFY_SECRET", "change-this-signing-secret")
-SUPPORTED_AUDIO_EXTS = {".mp3", ".wav"}
+SUPPORTED_AUDIO_EXTS = {".mp3"}
 DEFAULT_OUTPUT_DIR = str(Path.home() / "Desktop" / "AudioFlow_Output")
 
 
