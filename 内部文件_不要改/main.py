@@ -5,22 +5,24 @@ import os
 import sys
 import threading
 import time
+import ctypes
+from ctypes import wintypes
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QFont, QMouseEvent, QIcon
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QFont, QMouseEvent, QIcon, QGuiApplication, QCursor
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame,
     QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMainWindow, QMessageBox, QPushButton, QProgressBar, QRadioButton, QScrollArea,
-    QSpinBox, QTextEdit, QVBoxLayout, QWidget, QInputDialog, QProgressDialog
+    QSizeGrip, QSpinBox, QTextEdit, QVBoxLayout, QWidget, QInputDialog, QProgressDialog
 )
 
 from engine import AudioEngine, collect_audio_files, format_duration, format_size
 from license_client import activate_license, local_status, machine_code, online_verify
-from platform_presets import PLATFORM_ORDER, PLATFORM_PRESETS
-from schemes import SCHEMES, SCHEME_BY_ID
+from platform_presets import CATEGORY_ORDER, CATEGORY_PRESETS
+from schemes import DISPLAY_SCHEMES, SCHEME_BY_ID
 from settings import APP_NAME, APP_VERSION, CONTACT_TEXT, DEFAULT_OUTPUT_DIR, app_data_dir, resource_path
 from security_guard import runtime_guard_ok
 from updater import prepare_update
@@ -79,9 +81,9 @@ class DropArea(QFrame):
         super().__init__()
         self.setObjectName("dropBox")
         self.setAcceptDrops(True)
-        self.setMinimumHeight(190)
+        self.setMinimumHeight(150)
         lay = QVBoxLayout(self); lay.setAlignment(Qt.AlignCenter)
-        icon = QLabel("⇧"); icon.setAlignment(Qt.AlignCenter); icon.setStyleSheet("font-size:54px;color:#78c8ff;")
+        icon = QLabel("⇧"); icon.setAlignment(Qt.AlignCenter); icon.setStyleSheet("font-size:42px;color:#78c8ff;")
         text = QLabel("AI歌曲建议使用 MP3 格式\nWAV 可导入，但修复方案要选轻一点，避免跑偏")
         text.setAlignment(Qt.AlignCenter); text.setObjectName("blue")
         lay.addWidget(icon); lay.addWidget(text)
@@ -103,7 +105,8 @@ class ActivationDialog(QDialog):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("AudioFlow Studio｜输入卡密")
-        self.setFixedSize(560, 330)
+        self.setMinimumSize(460, 300)
+        self.resize(560, 330)
         self.setStyleSheet(QSS)
         layout = QVBoxLayout(self); layout.setContentsMargins(28,24,28,24); layout.setSpacing(14)
         title = QLabel("AudioFlow Studio"); title.setObjectName("title"); layout.addWidget(title)
@@ -127,15 +130,17 @@ class ActivationDialog(QDialog):
 INTRO_TEXT = """使用说明
 
 1. 添加歌曲：建议导入 MP3，最终统一导出 WAV。
-2. 选择方案：方案会按顺序逐步处理同一首歌，内部临时传递，最终只输出一个 WAV。
-3. 默认优先：先用“1”单方案保真，保留低频、高频、人声和尾段细节。
-4. 电音素材：低频重、鼓组密、后段能量大的歌曲可用“电音17”。
-5. 组合方案：只在单方案不够时再叠加，程序会减少中间重复收尾，避免波形被压平。
-6. 批量任务：右侧可设置并发数，普通电脑建议 1-2，高配置可适当提高。
-7. 输出位置：处理完成后可直接打开输出目录查看成品。
+2. 风格推荐：按歌曲类型选择即可，常用入口有人声流行、纯音乐器乐、DJ电音、古风民谣、说唱节奏。
+3. 高级方案：主界面保留 14 个核心方案，重复方向已经折进风格推荐和内部兼容链路。
+4. 处理顺序：方案会按顺序逐步处理同一首歌，内部临时传递，最终只输出一个成品文件。
+5. 默认优先：人声歌曲先用“人声流行”，纯音乐先用“纯音乐器乐”，低频重的歌先用“DJ电音”。
+6. 组合方案：只在单风格不够时再手动叠加，程序会减少中间重复收尾，避免波形被压平。
+7. 批量任务：右侧可设置并发数，普通电脑建议 1-2，高配置可适当提高。
+8. 输出位置：处理完成后可直接打开输出目录查看成品。
 
 问题咨询：Zhwdh141319
 添加时备注：AI原创
+不懂的可以关注我的公众号：山河网创笔记
 """
 
 
@@ -143,7 +148,7 @@ class ProcessWorker(QThread):
     log = Signal(str); progress = Signal(int, str); finishedOk = Signal(int, str); failed = Signal(str)
     def __init__(self, files: list[Path], out_dir: Path, ids: list[int], fmt: str, mode: str, workers: int = 1, variants: list[list[int]] | None = None, platform_code: str | None = None):
         super().__init__()
-        self.files=files; self.out_dir=out_dir; self.ids=ids; self.fmt="wav"; self.mode="pipeline"
+        self.files=files; self.out_dir=out_dir; self.ids=ids; self.fmt=(fmt or "wav").lower(); self.mode="pipeline"
         self.workers=max(1, min(int(workers or 1), max(1, len(files)), 4))
         self.variants=variants or []
         self.platform_code=platform_code
@@ -267,34 +272,88 @@ class SchemeCard(QFrame):
 
 class MainWindow(QMainWindow):
     update_ready = Signal(str)
+    update_ready_silent = Signal(str)
     update_progress = Signal(int, str)
+    _RESIZE_BORDER = 8
 
     def __init__(self):
         super().__init__()
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
-        self.setMinimumSize(1560, 860); self.resize(1720, 940); self.setStyleSheet(QSS)
+        self.setMinimumSize(960, 620)
+        self.setMouseTracking(True)
+        self.setStyleSheet(QSS)
         icon_path = resource_path("assets/audioflow.ico")
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
-        self.files: list[Path] = []; self.selected_order=[5]; self.selected_variants=None; self.selected_platform=None; self.platform_buttons={}; self.cards={}; self.worker=None; self.update_dialog=None; self.output_dir=Path(DEFAULT_OUTPUT_DIR); self.engine=AudioEngine(log=self.log); self._drag_pos=QPoint()
+        self.files: list[Path] = []; self.selected_order=[1]; self.selected_variants=None; self.selected_category="POP"; self.category_buttons={}; self.cards={}; self.worker=None; self.update_dialog=None; self.output_dir=Path(DEFAULT_OUTPUT_DIR); self.engine=AudioEngine(log=self.log); self._drag_pos=QPoint()
         self.update_ready.connect(self.notify_update_ready)
+        self.update_ready_silent.connect(self.notify_update_ready_silent)
         self.update_progress.connect(self.notify_update_progress)
-        self._build(); self.refresh_license(); self.refresh_order_ui(); self.log(f"AudioFlow Studio v{APP_VERSION} 已启动")
+        self._build(); self._fit_initial_window(); self.refresh_license(); self.apply_category_template(self.selected_category); self.refresh_order_ui(); self.log(f"AudioFlow Studio v{APP_VERSION} 已启动")
         QTimer.singleShot(450, self.show_intro_once)
         QTimer.singleShot(1600, self.check_update_silently)
+    def _fit_initial_window(self):
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            self.resize(1320, 760)
+            return
+        geo = screen.availableGeometry()
+        width = min(1420, max(960, int(geo.width() * 0.90)))
+        height = min(820, max(620, int(geo.height() * 0.88)))
+        self.resize(width, height)
+        self.move(geo.x() + max(0, (geo.width() - width) // 2), geo.y() + max(0, (geo.height() - height) // 2))
     def _panel(self, title: str):
         frame=QFrame(); frame.setObjectName("panel"); lay=QVBoxLayout(frame); lay.setContentsMargins(18,18,18,18); lay.setSpacing(12); label=QLabel(title); label.setObjectName("section"); lay.addWidget(label); return frame,lay
     def _build(self):
         root=QWidget(); root.setObjectName("root"); self.setCentralWidget(root); main=QVBoxLayout(root); main.setContentsMargins(14,12,14,14); main.setSpacing(10)
         header=QFrame(); header.setObjectName("topBar"); header.installEventFilter(self); h=QHBoxLayout(header); h.setContentsMargins(4,0,4,0)
-        logo=QLabel("≋"); logo.setStyleSheet("font-size:26px;color:#5aa2ff;font-weight:900;"); title=QLabel("AudioFlow Studio"); title.setObjectName("title"); sub=QLabel("｜AI歌曲真人化工作台｜AI歌曲真人化｜批量方案流水线"); sub.setObjectName("muted")
+        logo=QLabel("≋"); logo.setStyleSheet("font-size:26px;color:#5aa2ff;font-weight:900;"); title=QLabel("AudioFlow Studio"); title.setObjectName("title"); sub=QLabel("｜音频自然修复｜批量方案流水线"); sub.setObjectName("muted")
         self.open_out_btn=QPushButton("打开输出目录"); self.contact_btn=QPushButton("问题咨询"); self.lic_btn=QPushButton("授权 / 续期"); self.lic_label=QLabel(""); self.lic_label.setObjectName("green"); self.version_label=QLabel(f"v{APP_VERSION}"); self.version_label.setObjectName("muted")
         mini=QPushButton("—"); mini.setObjectName("windowBtn"); close=QPushButton("×"); close.setObjectName("windowBtn")
         mini.clicked.connect(self.showMinimized); close.clicked.connect(self.close)
         h.addWidget(logo); h.addWidget(title); h.addWidget(sub); h.addStretch(1); h.addWidget(self.open_out_btn); h.addWidget(self.contact_btn); h.addWidget(self.lic_btn); h.addWidget(self.lic_label); h.addSpacing(6); h.addWidget(self.version_label); h.addSpacing(8); h.addWidget(mini); h.addWidget(close)
         main.addWidget(header)
-        grid=QHBoxLayout(); grid.setSpacing(12); grid.addWidget(self._build_left(), 3); grid.addWidget(self._build_middle(), 6); grid.addWidget(self._build_right(), 4); main.addLayout(grid,1)
+        grid=QHBoxLayout(); grid.setSpacing(10); grid.addWidget(self._build_left(), 3); grid.addWidget(self._build_middle(), 6); grid.addWidget(self._build_right(), 4); main.addLayout(grid,1)
+        grip_row=QHBoxLayout(); grip_row.setContentsMargins(0,0,0,0); grip_row.addStretch(1); grip_row.addWidget(QSizeGrip(self)); main.addLayout(grip_row)
         self.open_out_btn.clicked.connect(self.open_output_dir); self.contact_btn.clicked.connect(self.show_contact_dialog); self.lic_btn.clicked.connect(self.show_license_dialog)
+
+    def nativeEvent(self, event_type, message):
+        event_name = bytes(event_type).decode(errors="ignore") if isinstance(event_type, (bytes, bytearray)) else str(event_type)
+        if sys.platform.startswith("win") and event_name == "windows_generic_MSG" and not self.isMaximized():
+            try:
+                msg = wintypes.MSG.from_address(int(message))
+            except (TypeError, ValueError, OSError):
+                return super().nativeEvent(event_type, message)
+            if msg.message == 0x0084:  # WM_NCHITTEST
+                pos = QCursor.pos()
+                rect = self.frameGeometry()
+                x = pos.x() - rect.x()
+                y = pos.y() - rect.y()
+                w = rect.width()
+                h = rect.height()
+                border = self._RESIZE_BORDER
+                left = x <= border
+                right = x >= w - border
+                top = y <= border
+                bottom = y >= h - border
+                if top and left:
+                    return True, 13  # HTTOPLEFT
+                if top and right:
+                    return True, 14  # HTTOPRIGHT
+                if bottom and left:
+                    return True, 16  # HTBOTTOMLEFT
+                if bottom and right:
+                    return True, 17  # HTBOTTOMRIGHT
+                if left:
+                    return True, 10  # HTLEFT
+                if right:
+                    return True, 11  # HTRIGHT
+                if top:
+                    return True, 12  # HTTOP
+                if bottom:
+                    return True, 15  # HTBOTTOM
+        return super().nativeEvent(event_type, message)
+
     def eventFilter(self, obj, event):
         if isinstance(event, QMouseEvent) and obj.objectName()=="topBar":
             if event.type()==QMouseEvent.MouseButtonPress and event.button()==Qt.LeftButton: self._drag_pos=event.globalPosition().toPoint()-self.frameGeometry().topLeft(); return True
@@ -328,40 +387,47 @@ class MainWindow(QMainWindow):
         lay.addWidget(btn)
         return card
     def _build_middle(self):
-        panel,lay=self._panel("02 AI歌曲真人化｜顺序方案库")
-        order=QHBoxLayout(); order.addWidget(QLabel("已选顺序：")); self.order_edit=QLineEdit(); self.order_edit.setReadOnly(True); order.addWidget(self.order_edit,1); lay.addLayout(order)
-        seq=QHBoxLayout(); self.seq_list=QListWidget(); self.seq_list.setMaximumHeight(112); seq.addWidget(self.seq_list,1); col=QVBoxLayout()
+        panel,lay=self._panel("02 风格方案｜一键处理")
+        category_box=QFrame(); category_box.setObjectName("card"); category_box.setMaximumHeight(168); cl=QVBoxLayout(category_box); cl.setContentsMargins(10,8,10,8); cl.setSpacing(6)
+        cl.addWidget(QLabel("风格分类推荐"))
+        cgrid=QGridLayout(); cgrid.setHorizontalSpacing(8); cgrid.setVerticalSpacing(8)
+        for i, code in enumerate(CATEGORY_ORDER):
+            preset=CATEGORY_PRESETS[code]
+            b=QPushButton(preset["short"])
+            b.setMinimumHeight(34)
+            b.setToolTip(preset["desc"])
+            b.clicked.connect(lambda _checked=False, c=code: self.apply_category_template(c))
+            self.category_buttons[code]=b
+            cgrid.addWidget(b, i // 4, i % 4)
+        cl.addLayout(cgrid)
+        self.category_desc=QLabel("")
+        self.category_desc.setObjectName("muted")
+        self.category_desc.setWordWrap(True)
+        cl.addWidget(self.category_desc)
+        lay.addWidget(category_box)
+
+        order_box=QFrame(); order_box.setObjectName("card"); ol=QVBoxLayout(order_box); ol.setContentsMargins(10,8,10,8); ol.setSpacing(4)
+        order=QHBoxLayout(); order.addWidget(QLabel("当前处理顺序")); self.order_edit=QLineEdit(); self.order_edit.setReadOnly(True); order.addWidget(self.order_edit,1); ol.addLayout(order)
+        seq=QHBoxLayout(); self.seq_list=QListWidget(); self.seq_list.setMaximumHeight(66); seq.addWidget(self.seq_list,1); col=QVBoxLayout()
         for text,cb in [("上移",lambda:self.move_selected(-1)),("下移",lambda:self.move_selected(1)),("移除",self.remove_scheme_from_order)]:
             b=QPushButton(text); b.clicked.connect(cb); col.addWidget(b)
-        col.addStretch(1); seq.addLayout(col); lay.addLayout(seq)
-        platform_box=QFrame(); platform_box.setObjectName("card"); platform_box.setMaximumHeight(112); pl=QVBoxLayout(platform_box); pl.setContentsMargins(10,8,10,8); pl.setSpacing(6)
-        pl.addWidget(QLabel("实测快捷组合"))
-        prow=QHBoxLayout()
-        for code in PLATFORM_ORDER:
-            preset=PLATFORM_PRESETS[code]
-            b=QPushButton(preset["short"])
-            b.setToolTip(preset["desc"])
-            b.clicked.connect(lambda _checked=False, c=code: self.apply_platform_template(c))
-            self.platform_buttons[code]=b
-            prow.addWidget(b)
-        clear_btn=QPushButton("手动")
-        clear_btn.clicked.connect(self.clear_platform_template)
-        prow.addWidget(clear_btn)
-        pl.addLayout(prow)
-        self.platform_desc=QLabel("未选择快捷组合：按手动勾选顺序处理，最终只输出一个 WAV。")
-        self.platform_desc.setObjectName("muted")
-        self.platform_desc.setWordWrap(True)
-        pl.addWidget(self.platform_desc)
-        lay.addWidget(platform_box)
-        lay.addWidget(QLabel(f"方案库（{len(SCHEMES)}）")); scroll=QScrollArea(); scroll.setWidgetResizable(True); scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff); scroll.setFrameShape(QFrame.NoFrame); scroll.setFocusPolicy(Qt.NoFocus); scroll.viewport().setStyleSheet("background:#071426;border:0;")
+        col.addStretch(1); seq.addLayout(col); ol.addLayout(seq); lay.addWidget(order_box)
+
+        adv_head=QHBoxLayout(); adv_title=QLabel(f"高级核心方案（{len(DISPLAY_SCHEMES)}）"); adv_title.setObjectName("muted"); adv_head.addWidget(adv_title); adv_head.addStretch(1)
+        self.advanced_toggle=QPushButton("展开高级方案"); self.advanced_toggle.clicked.connect(self.toggle_advanced_schemes); adv_head.addWidget(self.advanced_toggle)
+        reset_btn=QPushButton("恢复推荐"); reset_btn.clicked.connect(lambda: self.apply_category_template("POP")); adv_head.addWidget(reset_btn); lay.addLayout(adv_head)
+        scroll=QScrollArea(); scroll.setWidgetResizable(True); scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff); scroll.setFrameShape(QFrame.NoFrame); scroll.setFocusPolicy(Qt.NoFocus); scroll.viewport().setStyleSheet("background:#071426;border:0;")
         box=QWidget(); box.setStyleSheet("background:#071426;border:0;"); sg=QGridLayout(box); sg.setSpacing(10); sg.setContentsMargins(0,0,0,0)
-        for i,s in enumerate(SCHEMES):
+        for i,s in enumerate(DISPLAY_SCHEMES):
             card=SchemeCard(s, int(s["index"]) in self.selected_order); card.setFocusPolicy(Qt.NoFocus); card.toggled.connect(self.on_card_toggled); self.cards[int(s["index"])]=card; sg.addWidget(card, i//4, i%4)
-        scroll.setWidget(box); lay.addWidget(scroll,1)
+        scroll.setWidget(box); self.advanced_scroll=scroll; self.advanced_scroll.setVisible(False); lay.addWidget(scroll,1)
         return panel
     def _build_right(self):
-        panel,lay=self._panel("03 输出 / 任务队列"); mode=QFrame(); mode.setObjectName("card"); ml=QVBoxLayout(mode); ml.addWidget(QLabel("处理模式")); self.pipeline_radio=QRadioButton("顺序流水线处理：内部逐步套方案，最终只输出一个 WAV"); self.pipeline_radio.setChecked(True); ml.addWidget(self.pipeline_radio); lay.addWidget(mode)
-        row=QHBoxLayout(); row.addWidget(QLabel("输出格式：")); self.format_combo=QComboBox(); self.format_combo.addItems(["WAV"]); self.format_combo.setEnabled(False); row.addWidget(self.format_combo); row.addWidget(QLabel("并发数：")); self.worker_spin=QSpinBox(); self.worker_spin.setRange(1,4); self.worker_spin.setValue(3); row.addWidget(self.worker_spin); row.addStretch(1); lay.addLayout(row)
+        panel,lay=self._panel("03 输出 / 任务队列")
+        self.pipeline_radio=QRadioButton("顺序流水线处理，最终只输出一个文件")
+        self.pipeline_radio.setChecked(True)
+        self.pipeline_radio.setVisible(False)
+        row=QHBoxLayout(); row.addWidget(QLabel("输出格式：")); self.format_combo=QComboBox(); self.format_combo.addItems(["WAV", "小体积MP3"]); self.format_combo.setToolTip("WAV 保留最高质量；小体积MP3 会控制体积，适合需要快速上传或试听的场景。"); row.addWidget(self.format_combo); row.addWidget(QLabel("并发数：")); self.worker_spin=QSpinBox(); self.worker_spin.setRange(1,4); self.worker_spin.setValue(3); row.addWidget(self.worker_spin); row.addStretch(1); lay.addLayout(row)
         out=QHBoxLayout(); out.addWidget(QLabel("输出目录：")); self.out_edit=QLineEdit(str(self.output_dir)); out.addWidget(self.out_edit,1); browse=QPushButton("浏览"); browse.clicked.connect(self.choose_output_dir); out.addWidget(browse); lay.addLayout(out)
         self.start_btn=QPushButton("按当前方案开始"); self.start_btn.setObjectName("primary"); self.stop_btn=QPushButton("停止队列"); self.stop_btn.setObjectName("danger"); self.open_dir_btn=QPushButton("打开输出目录")
         self.start_btn.clicked.connect(self.start_processing); self.stop_btn.clicked.connect(self.stop_processing); self.open_dir_btn.clicked.connect(self.open_output_dir)
@@ -396,11 +462,14 @@ class MainWindow(QMainWindow):
     def check_update_silently(self):
         def worker():
             try:
-                ready, version = prepare_update(APP_VERSION, progress=lambda p, t: self.update_progress.emit(int(p), str(t)))
+                ready, version, show_ui = prepare_update(APP_VERSION, progress=lambda p, t: self.update_progress.emit(int(p), str(t)))
             except Exception:
                 return
             if ready:
-                self.update_ready.emit(version)
+                if show_ui:
+                    self.update_ready.emit(version)
+                else:
+                    self.update_ready_silent.emit(version)
         threading.Thread(target=worker, daemon=True).start()
     def notify_update_progress(self, value: int, text: str):
         if self.update_dialog is None:
@@ -423,6 +492,11 @@ class MainWindow(QMainWindow):
             "自动更新已准备",
             f"发现新版 {version}，更新包已下载。关闭当前软件后会自动替换并重新打开。",
         )
+    def notify_update_ready_silent(self, version: str):
+        if self.update_dialog is not None:
+            self.update_dialog.close()
+            self.update_dialog = None
+        self.log(f"后台已准备新版 {version}，关闭软件后自动替换。")
     def add_files(self):
         files,_=QFileDialog.getOpenFileNames(self,"选择音频",str(Path.home()),"Audio Files (*.mp3 *.wav)"); self.add_paths(files)
     def add_folder(self):
@@ -449,50 +523,47 @@ class MainWindow(QMainWindow):
         files = self._feature_files()
         if not files:
             return
-        style_label, accepted = QInputDialog.getItem(self, "智能母音升级", "处理风格：", ["自然精修", "柔和保真", "检测友好"], 0, False)
+        style_label, accepted = QInputDialog.getItem(self, "智能母音升级", "处理风格：", ["自然精修", "柔和保真", "精细整理"], 0, False)
         if not accepted:
             return
-        style = {"自然精修": "natural", "柔和保真": "soft", "检测友好": "detect"}.get(style_label, "natural")
+        style = {"自然精修": "natural", "柔和保真": "soft", "精细整理": "detect"}.get(style_label, "natural")
         self.start_btn.setEnabled(False); self.progress.setValue(0)
         self.worker=FeatureWorker("master", files, Path(self.out_edit.text()).resolve(), style)
         self.worker.log.connect(self.log); self.worker.progress.connect(lambda p,s:(self.progress.setValue(p),self.status.setText(s)))
         self.worker.finishedOk.connect(self.on_finished); self.worker.failed.connect(self.on_failed); self.worker.start()
     def apply_builtin_combo(self, ids: list[int], label: str):
-        self.selected_platform = None
+        self.selected_category = None
         self.selected_variants = None
         self.selected_order = [int(x) for x in ids if int(x) in SCHEME_BY_ID]
-        for btn in getattr(self, "platform_buttons", {}).values():
+        for btn in getattr(self, "category_buttons", {}).values():
             btn.setObjectName("")
             btn.style().unpolish(btn); btn.style().polish(btn)
-        if hasattr(self, "platform_desc"):
-            self.platform_desc.setText(f"{label}：方案 {'-'.join(map(str, self.selected_order))}，最终只输出一个 WAV。")
+        if hasattr(self, "category_desc"):
+            self.category_desc.setText("已切到手动 / 自定义组合。")
         self.refresh_order_ui()
         self.log(f"已选择{label}：方案 {'-'.join(map(str, self.selected_order))}")
-    def apply_platform_template(self, code: str):
-        preset = PLATFORM_PRESETS.get(code)
+    def apply_category_template(self, code: str):
+        preset = CATEGORY_PRESETS.get(code)
         if not preset:
             return
-        self.selected_platform = code
+        self.selected_category = code
         self.selected_variants = None
         self.selected_order = list(preset["schemes"])
         fmt = str(preset.get("format") or "WAV").upper()
-        idx = self.format_combo.findText(fmt)
-        if idx >= 0:
-            self.format_combo.setCurrentIndex(idx)
-        self.platform_desc.setText(f"{preset['name']}：{preset['desc']}｜方案 {'-'.join(map(str, self.selected_order))}｜输出 WAV")
-        for c, btn in self.platform_buttons.items():
+        for i in range(self.format_combo.count()):
+            if self.format_combo.itemText(i).upper().startswith(fmt):
+                self.format_combo.setCurrentIndex(i)
+                break
+        self.category_desc.setText(f"{preset['name']}：{preset['desc']}｜方案 {'-'.join(map(str, self.selected_order))}｜输出 {fmt}")
+        for c, btn in self.category_buttons.items():
             btn.setObjectName("primary" if c == code else "")
             btn.style().unpolish(btn); btn.style().polish(btn)
         self.refresh_order_ui()
-        self.log(f"已应用快捷组合：{preset['name']}，方案 {'-'.join(map(str, self.selected_order))}，最终 WAV")
-    def clear_platform_template(self):
-        self.selected_platform = None
-        self.selected_variants = None
-        self.platform_desc.setText("未选择快捷组合：按手动勾选顺序处理，最终只输出一个 WAV。")
-        for btn in self.platform_buttons.values():
-            btn.setObjectName("")
-            btn.style().unpolish(btn); btn.style().polish(btn)
-        self.refresh_order_ui()
+        self.log(f"已应用分类推荐：{preset['name']}，方案 {'-'.join(map(str, self.selected_order))}，输出 {fmt}")
+    def toggle_advanced_schemes(self):
+        visible = not self.advanced_scroll.isVisible()
+        self.advanced_scroll.setVisible(visible)
+        self.advanced_toggle.setText("收起高级方案" if visible else "展开高级方案")
     def refresh_file_list(self):
         self.file_list.clear(); total=0; dur=0
         for f in self.files:
@@ -522,11 +593,11 @@ class MainWindow(QMainWindow):
         for sid,card in self.cards.items(): card.set_checked(sid in self.selected_order)
     def on_card_toggled(self,sid,checked):
         self.selected_variants=None
-        if self.selected_platform:
-            self.selected_platform=None
-            if hasattr(self, "platform_desc"):
-                self.platform_desc.setText("已切回手动方案：按当前勾选顺序处理，最终只输出一个 WAV。")
-            for btn in getattr(self, "platform_buttons", {}).values():
+        if self.selected_category:
+            self.selected_category=None
+            if hasattr(self, "category_desc"):
+                self.category_desc.setText("已切回手动方案：按当前勾选顺序处理，最终只输出一个文件。")
+            for btn in getattr(self, "category_buttons", {}).values():
                 btn.setObjectName("")
                 btn.style().unpolish(btn); btn.style().polish(btn)
         if checked:
@@ -555,8 +626,8 @@ class MainWindow(QMainWindow):
         if not self.files: QMessageBox.warning(self,"缺少素材","请先添加或拖拽音频。"); return
         if not self.selected_order: QMessageBox.warning(self,"缺少方案","请至少选择一个方案。"); return
         out=Path(self.out_edit.text()).resolve(); mode="pipeline"; workers=self.worker_spin.value(); self.start_btn.setEnabled(False); self.progress.setValue(0)
-        platform_code = self.selected_platform
-        self.worker=ProcessWorker(self.files,out,self.selected_order,"wav",mode,workers=workers,variants=None,platform_code=platform_code); self.worker.log.connect(self.log); self.worker.progress.connect(lambda p,s:(self.progress.setValue(p),self.status.setText(s))); self.worker.finishedOk.connect(self.on_finished); self.worker.failed.connect(self.on_failed); self.worker.start()
+        fmt = "mp3" if self.format_combo.currentText().upper().startswith("MP3") else "wav"
+        self.worker=ProcessWorker(self.files,out,self.selected_order,fmt,mode,workers=workers,variants=None,platform_code=None); self.worker.log.connect(self.log); self.worker.progress.connect(lambda p,s:(self.progress.setValue(p),self.status.setText(s))); self.worker.finishedOk.connect(self.on_finished); self.worker.failed.connect(self.on_failed); self.worker.start()
     def stop_processing(self):
         if self.worker: self.worker.request_stop(); self.log("已请求停止。")
     def on_finished(self,count,out_dir):
@@ -594,6 +665,8 @@ def main():
         QMessageBox.critical(None, "运行环境异常", guard_msg)
         return 1
     ok,_msg,_payload=local_status()
+    if not ok:
+        ok,_msg,_payload=online_verify()
     if not ok:
         dlg=ActivationDialog()
         if dlg.exec()!=QDialog.Accepted: return 0

@@ -70,6 +70,11 @@ def offline_grace_status() -> tuple[bool, str, dict[str, Any] | None]:
     return True, f"{msg}｜离线宽限 {remain // 3600} 小时{remain % 3600 // 60} 分钟", payload
 
 
+def _previous_machine_code() -> str:
+    payload = (load_license() or {}).get("payload") or {}
+    return str(payload.get("machine_code") or "").strip().upper()
+
+
 def _server_candidates(preferred: str | None = None) -> list[str]:
     values = []
     if preferred:
@@ -94,8 +99,11 @@ def local_status() -> tuple[bool, str, dict[str, Any] | None]:
     sig = data.get("signature") or ""
     if not verify_server_signature(payload, sig):
         return False, "授权文件校验失败", None
-    if payload.get("machine_code") != machine_code():
+    current_machine = machine_code()
+    if payload.get("machine_code") != current_machine:
         return False, "授权设备不匹配", None
+    if payload.get("permanent") or payload.get("card_type") == "lifetime":
+        return True, "永久卡｜已激活｜离线可用", payload
     expires_at = float(payload.get("expires_at") or 0)
     now = time.time()
     if expires_at <= now:
@@ -125,6 +133,7 @@ def activate_license(card_key: str, server_url: str | None = None) -> tuple[bool
                 json={
                     "card_key": card_key,
                     "machine_code": machine_code(),
+                    "previous_machine_code": _previous_machine_code(),
                     "current_card_key": current_card_key if current_card_key and current_card_key != card_key else "",
                 },
                 timeout=10,
@@ -153,13 +162,16 @@ def online_verify() -> tuple[bool, str, dict[str, Any] | None]:
     if not lic:
         return False, "未激活", None
     key = (lic.get("payload") or {}).get("card_key")
+    ok_local, local_msg, local_payload = local_status()
+    if ok_local and ((local_payload or {}).get("permanent") or (local_payload or {}).get("card_type") == "lifetime"):
+        return True, local_msg, local_payload
     errors = []
     server_messages = []
     for base in _server_candidates(lic.get("server_url")):
         try:
             resp = requests.post(
                 f"{base}/api/license/verify",
-                json={"card_key": key, "machine_code": machine_code()},
+                json={"card_key": key, "machine_code": machine_code(), "previous_machine_code": _previous_machine_code()},
                 timeout=10,
             )
             data = resp.json()

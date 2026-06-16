@@ -62,6 +62,15 @@ def fetch_update_info(current_version: str) -> dict[str, Any] | None:
         return None
 
 
+def should_show_update_ui(info: dict[str, Any], current_version: str) -> bool:
+    level = str(info.get("notice_level") or info.get("update_level") or "").strip().lower()
+    if level in {"silent", "quiet", "none", "background"}:
+        return False
+    if level in {"notice", "major", "force", "required"}:
+        return True
+    return False
+
+
 def download_update(info: dict[str, Any], progress=None) -> Path:
     update_dir = app_data_dir() / "updates"
     update_dir.mkdir(parents=True, exist_ok=True)
@@ -167,14 +176,17 @@ def schedule_replace_macos(downloaded_zip: Path, exe: Path) -> bool:
     return True
 
 
-def prepare_update(current_version: str, progress=None) -> tuple[bool, str]:
+def prepare_update(current_version: str, progress=None) -> tuple[bool, str, bool]:
     info = fetch_update_info(current_version)
     if not info:
-        return False, ""
+        return False, "", False
+    show_ui = should_show_update_ui(info, current_version)
+    visible_progress = progress if show_ui else None
     if progress:
-        progress(0, f"发现新版 {info.get('version') or ''}，准备下载")
-    downloaded = download_update(info, progress=progress)
+        if visible_progress:
+            visible_progress(0, f"发现新版 {info.get('version') or ''}，准备下载")
+    downloaded = download_update(info, progress=visible_progress)
     scheduled = schedule_replace(downloaded)
     if not scheduled:
-        return False, ""
-    return True, str(info.get("version") or "")
+        return False, "", False
+    return True, str(info.get("version") or ""), show_ui

@@ -24,9 +24,9 @@ jobs:
 
       - name: Build app
         run: |
-          BUILD_DIR="$(dirname "$(find . -maxdepth 3 -name build_mac_app.sh -print -quit)")"
-          if [ -z "$BUILD_DIR" ] || [ "$BUILD_DIR" = "." ]; then
-            echo "build_mac_app.sh not found"
+          BUILD_DIR="$GITHUB_WORKSPACE/内部文件_不要改"
+          if [ ! -f "$BUILD_DIR/build_mac_app.sh" ]; then
+            echo "build_mac_app.sh not found in $BUILD_DIR"
             exit 1
           fi
           cd "$BUILD_DIR"

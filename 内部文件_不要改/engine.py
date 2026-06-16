@@ -64,6 +64,15 @@ class AudioInfo:
     sample_rate: int = 0
 
 
+@dataclass
+class QualityReport:
+    mean_db: float | None = None
+    max_db: float | None = None
+    duration_delta: float = 0
+    score: int = 0
+    note: str = ""
+
+
 class AudioEngine:
     """AudioFlow processing engine."""
 
@@ -199,6 +208,71 @@ class AudioEngine:
         except Exception:
             return AudioInfo(0, size)
 
+    def measure_levels(self, file: Path) -> tuple[float | None, float | None]:
+        file = Path(file)
+        if not self.ffmpeg or not self.ffmpeg.exists() or not file.exists():
+            return None, None
+        try:
+            cp = subprocess.run(
+                [str(self.ffmpeg), "-hide_banner", "-i", str(file), "-af", "volumedetect", "-f", "null", "NUL" if os.name == "nt" else "/dev/null"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="ignore",
+                timeout=30,
+                shell=False,
+                **self._startup_kwargs(),
+            )
+            text = (cp.stdout or "") + "\n" + (cp.stderr or "")
+            mean_match = re.search(r"mean_volume:\s*(-?\d+(?:\.\d+)?)\s*dB", text)
+            max_match = re.search(r"max_volume:\s*(-?\d+(?:\.\d+)?)\s*dB", text)
+            mean_db = float(mean_match.group(1)) if mean_match else None
+            max_db = float(max_match.group(1)) if max_match else None
+            return mean_db, max_db
+        except Exception:
+            return None, None
+
+    def ensure_audible_output(self, file: Path) -> None:
+        mean_db, max_db = self.measure_levels(file)
+        if mean_db is None or max_db is None:
+            return
+        self.log(f"导出验音：平均响度 {mean_db:.1f} dB，峰值 {max_db:.1f} dB")
+        if mean_db <= -42 or max_db <= -12:
+            raise RuntimeError(f"导出结果异常偏小，已停止输出。检测到平均响度 {mean_db:.1f} dB，峰值 {max_db:.1f} dB。请优先尝试“纯音乐器乐 / 人声流行 / DJ电音”。")
+
+    def quality_report(self, source: Path, output: Path) -> QualityReport:
+        src_info = self.probe(source)
+        out_info = self.probe(output)
+        mean_db, max_db = self.measure_levels(output)
+        score = 100
+        notes: list[str] = []
+        duration_delta = 0.0
+        if src_info.duration > 1 and out_info.duration > 1:
+            duration_delta = abs(float(out_info.duration) - float(src_info.duration))
+            if duration_delta > 0.35:
+                score -= 18
+                notes.append(f"时长偏差 {duration_delta:.2f}s")
+        if mean_db is not None:
+            if mean_db < -24:
+                score -= 16
+                notes.append("整体偏小")
+            elif mean_db > -8:
+                score -= 10
+                notes.append("整体偏满")
+        if max_db is not None:
+            if max_db >= -0.1:
+                score -= 10
+                notes.append("峰值过顶")
+            elif max_db < -6:
+                score -= 8
+                notes.append("峰值偏低")
+        if out_info.size <= 1024:
+            score = 0
+            notes.append("文件异常")
+        score = max(0, min(100, int(score)))
+        return QualityReport(mean_db, max_db, duration_delta, score, "，".join(notes) or "正常")
+
     def _stage_name(self, stage_dir: Path, step: int, scheme: dict, ext: str) -> Path:
         return stage_dir / f"stage_{step:02d}_scheme_{int(scheme['index']):02d}.{ext}"
 
@@ -322,6 +396,15 @@ class AudioEngine:
                 ], "legacy final wav restore", capture=False)
         return out_path
 
+    def _mp3_bitrate_for_duration(self, duration: float) -> str:
+        duration = max(1.0, float(duration or 0))
+        target_bytes = 19 * 1024 * 1024
+        max_kbps = int((target_bytes * 8) / duration / 1000)
+        for kbps in (320, 256, 224, 192, 160, 128):
+            if kbps <= max_kbps:
+                return f"{kbps}k"
+        return "128k"
+
     def _export_or_copy_final(self, src_stage: Path, out_file: Path, fmt: str, duration_target: float = 0) -> None:
         out_file.parent.mkdir(parents=True, exist_ok=True)
         fmt = fmt.lower()
@@ -336,12 +419,19 @@ class AudioEngine:
             cmd += ["-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", out_file]
             self._run(cmd, "final WAV export", capture=False)
             return
+        if fmt == "mp3":
+            duration = duration_target or float(self.probe(src_stage).duration or 0)
+            bitrate = self._mp3_bitrate_for_duration(duration)
+            self._run([
+                self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+                "-i", src_stage, "-vn", "-map_metadata", "-1",
+                "-codec:a", "libmp3lame", "-b:a", bitrate, out_file
+            ], f"final MP3 export ({bitrate})", capture=False)
+            return
         if src_stage.suffix.lower().lstrip(".") == fmt:
             shutil.copy2(src_stage, out_file)
             return
-        if fmt == "mp3":
-            self._run([self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", src_stage, "-vn", "-codec:a", "libmp3lame", "-b:a", "320k", out_file], "final MP3 export", capture=False)
-        elif fmt == "flac":
+        if fmt == "flac":
             self._run([self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", src_stage, "-vn", "-compression_level", "5", out_file], "final FLAC export", capture=False)
         else:
             self._run([self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", src_stage, "-vn", "-c:a", "pcm_s16le", out_file], "final audio export", capture=False)
@@ -535,7 +625,7 @@ class AudioEngine:
             "equalizer=f=3200:g=3.0:width_type=h:width=2200,"
             "equalizer=f=5800:g=1.3:width_type=h:width=3200,"
             "equalizer=f=14000:g=1.2:width_type=h:width=5000,"
-            "stereotools=slev=1.03,volume=0.20dB,alimiter=limit=0.982"
+            "stereotools=slev=1.03,volume=-0.35dB,alimiter=limit=0.93:level=false"
         )
         cmd = [
             self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
@@ -553,8 +643,165 @@ class AudioEngine:
             if tmp.exists():
                 tmp.unlink(missing_ok=True)
 
+    def _codec_args_for_output(self, out_file: Path) -> list[str]:
+        suffix = out_file.suffix.lower()
+        if suffix == ".mp3":
+            return ["-codec:a", "libmp3lame", "-b:a", "320k"]
+        if suffix == ".flac":
+            return ["-compression_level", "5"]
+        return ["-c:a", "pcm_s16le"]
+
+    def _polish_mode_for_schemes(self, scheme_ids: list[int]) -> str:
+        ids = [int(x) for x in scheme_ids]
+        if ids == [1]:
+            return "none"
+        if ids == [17] or (17 in ids and len(ids) <= 2):
+            return "dj"
+        if ids == [15] or ids[-1:] == [15]:
+            return "curve"
+        if ids == [16] or ids[-1:] == [16]:
+            return "master"
+        if ids == [1, 4]:
+            return "bright"
+        if ids == [1, 5]:
+            return "folk"
+        if ids == [1, 9]:
+            return "vocal"
+        return "balanced"
+
+    def _apply_multiband_natural_polish(self, out_file: Path, mode: str = "balanced") -> None:
+        mode = (mode or "balanced").strip().lower()
+        if mode == "none":
+            self.log("最终保真收尾：单方案轻修，跳过多频段重组")
+            return
+        tmp = out_file.with_name(out_file.stem + "_multiband_tmp" + out_file.suffix)
+        chains = {
+            "dj": (
+                "[0:a]asplit=6[sub][bass][lm][md][pr][ar];"
+                "[sub]lowpass=f=90,volume=1.015[sub1];"
+                "[bass]highpass=f=90,lowpass=f=240,volume=1.018[bass1];"
+                "[lm]highpass=f=240,lowpass=f=720,volume=1.004[lm1];"
+                "[md]highpass=f=720,lowpass=f=2600,volume=1.006[md1];"
+                "[pr]highpass=f=2600,lowpass=f=7200,volume=0.998[pr1];"
+                "[ar]highpass=f=7200,lowpass=f=18500,volume=1.006[ar1];"
+                "[sub1][bass1][lm1][md1][pr1][ar1]amix=inputs=6:normalize=0,"
+                "volume=4.6dB,acompressor=threshold=-18dB:ratio=1.06:attack=28:release=240:makeup=1.0,"
+                "alimiter=limit=0.965:level=false[out]"
+            ),
+            "curve": (
+                "[0:a]asplit=5[lo][lm][md][pr][ar];"
+                "[lo]lowpass=f=130,volume=0.996[lo1];"
+                "[lm]highpass=f=130,lowpass=f=560,volume=1.006[lm1];"
+                "[md]highpass=f=560,lowpass=f=2200,volume=1.016[md1];"
+                "[pr]highpass=f=2200,lowpass=f=6200,volume=1.012[pr1];"
+                "[ar]highpass=f=6200,lowpass=f=18000,volume=1.002[ar1];"
+                "[lo1][lm1][md1][pr1][ar1]amix=inputs=5:normalize=0,"
+                "volume=3.6dB,acompressor=threshold=-20dB:ratio=1.08:attack=22:release=210:makeup=1.0,"
+                "alimiter=limit=0.955:level=false[out]"
+            ),
+            "master": (
+                "[0:a]asplit=5[lo][lm][md][pr][ar];"
+                "[lo]lowpass=f=150,volume=1.000[lo1];"
+                "[lm]highpass=f=150,lowpass=f=620,volume=1.004[lm1];"
+                "[md]highpass=f=620,lowpass=f=2500,volume=1.006[md1];"
+                "[pr]highpass=f=2500,lowpass=f=6600,volume=1.002[pr1];"
+                "[ar]highpass=f=6600,lowpass=f=18000,volume=1.003[ar1];"
+                "[lo1][lm1][md1][pr1][ar1]amix=inputs=5:normalize=0,"
+                "volume=3.5dB,acompressor=threshold=-21dB:ratio=1.05:attack=28:release=260:makeup=1.0,"
+                "alimiter=limit=0.955:level=false[out]"
+            ),
+            "vocal": (
+                "[0:a]asplit=5[lo][lm][md][pr][ar];"
+                "[lo]lowpass=f=145,volume=0.996[lo1];"
+                "[lm]highpass=f=145,lowpass=f=620,volume=1.008[lm1];"
+                "[md]highpass=f=620,lowpass=f=2500,volume=1.010[md1];"
+                "[pr]highpass=f=2500,lowpass=f=6600,volume=0.998[pr1];"
+                "[ar]highpass=f=6600,lowpass=f=18000,volume=1.006[ar1];"
+                "[lo1][lm1][md1][pr1][ar1]amix=inputs=5:normalize=0,"
+                "volume=3.7dB,acompressor=threshold=-20dB:ratio=1.08:attack=22:release=210:makeup=1.0,"
+                "alimiter=limit=0.955:level=false[out]"
+            ),
+            "folk": (
+                "[0:a]asplit=5[lo][lm][md][pr][ar];"
+                "[lo]lowpass=f=145,volume=0.998[lo1];"
+                "[lm]highpass=f=145,lowpass=f=620,volume=1.006[lm1];"
+                "[md]highpass=f=620,lowpass=f=2500,volume=1.006[md1];"
+                "[pr]highpass=f=2500,lowpass=f=6600,volume=0.996[pr1];"
+                "[ar]highpass=f=6600,lowpass=f=18000,volume=1.002[ar1];"
+                "[lo1][lm1][md1][pr1][ar1]amix=inputs=5:normalize=0,"
+                "volume=3.3dB,acompressor=threshold=-21dB:ratio=1.06:attack=26:release=230:makeup=1.0,"
+                "alimiter=limit=0.945:level=false[out]"
+            ),
+            "bright": (
+                "[0:a]asplit=5[lo][lm][md][pr][ar];"
+                "[lo]lowpass=f=145,volume=0.996[lo1];"
+                "[lm]highpass=f=145,lowpass=f=620,volume=1.004[lm1];"
+                "[md]highpass=f=620,lowpass=f=2500,volume=1.004[md1];"
+                "[pr]highpass=f=2500,lowpass=f=6600,volume=0.990[pr1];"
+                "[ar]highpass=f=6600,lowpass=f=18000,volume=0.992[ar1];"
+                "[lo1][lm1][md1][pr1][ar1]amix=inputs=5:normalize=0,"
+                "volume=3.1dB,acompressor=threshold=-21dB:ratio=1.06:attack=28:release=240:makeup=1.0,"
+                "alimiter=limit=0.940:level=false[out]"
+            ),
+            "balanced": (
+                "[0:a]asplit=5[lo][lm][md][pr][ar];"
+                "[lo]lowpass=f=155,volume=0.996[lo1];"
+                "[lm]highpass=f=155,lowpass=f=620,volume=1.006[lm1];"
+                "[md]highpass=f=620,lowpass=f=2500,volume=1.008[md1];"
+                "[pr]highpass=f=2500,lowpass=f=6600,volume=1.000[pr1];"
+                "[ar]highpass=f=6600,lowpass=f=18000,volume=1.004[ar1];"
+                "[lo1][lm1][md1][pr1][ar1]amix=inputs=5:normalize=0,"
+                "volume=3.6dB,acompressor=threshold=-20dB:ratio=1.08:attack=22:release=220:makeup=1.0,"
+                "alimiter=limit=0.955:level=false[out]"
+            ),
+        }
+        filter_complex = chains.get(mode, chains["balanced"])
+        cmd = [
+            self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+            "-i", out_file, "-filter_complex", filter_complex,
+            "-map", "[out]", "-ar", "48000", "-ac", "2", "-map_metadata", "-1",
+        ] + self._codec_args_for_output(out_file) + [tmp]
+        try:
+            self._run(cmd, f"multiband natural polish ({mode})", capture=False)
+            if tmp.exists() and tmp.stat().st_size > 1024:
+                shutil.move(str(tmp), str(out_file))
+            else:
+                raise RuntimeError("multiband natural polish did not create a valid file")
+        finally:
+            if tmp.exists():
+                tmp.unlink(missing_ok=True)
+
+    def _reserve_output_headroom(self, out_file: Path, mode: str = "balanced") -> None:
+        tmp = out_file.with_name(out_file.stem + "_headroom_tmp" + out_file.suffix)
+        mode = (mode or "balanced").strip().lower()
+        level_map = {
+            "none": ("volume=-0.35dB", "0.965"),
+            "dj": ("volume=-0.30dB", "0.965"),
+            "vocal": ("volume=-0.45dB", "0.950"),
+            "curve": ("volume=-0.45dB", "0.955"),
+            "master": ("volume=-0.50dB", "0.955"),
+            "folk": ("volume=-0.65dB", "0.945"),
+            "bright": ("volume=-0.80dB", "0.940"),
+            "balanced": ("volume=-0.55dB", "0.950"),
+        }
+        vol, limit = level_map.get(mode, level_map["balanced"])
+        cmd = [
+            self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+            "-i", out_file, "-af", f"{vol},alimiter=limit={limit}:level=false",
+            "-ar", "48000", "-ac", "2", "-map_metadata", "-1",
+        ] + self._codec_args_for_output(out_file) + [tmp]
+        try:
+            self._run(cmd, "final headroom reserve", capture=False)
+            if tmp.exists() and tmp.stat().st_size > 1024:
+                shutil.move(str(tmp), str(out_file))
+            else:
+                raise RuntimeError("final headroom reserve did not create a valid file")
+        finally:
+            if tmp.exists():
+                tmp.unlink(missing_ok=True)
+
     def process_pipeline(self, src: Path, out_dir: Path | str, scheme_ids: list[int], fmt: str = "wav", progress: Callable[[int, str], None] | None = None, platform_code: str | None = None) -> Path:
-        # Sequential pipeline: temp stages are internal; final output is one WAV.
+        # Sequential pipeline: temp stages are internal; final output is one file.
         ok, msg = self.validate()
         if not ok:
             raise RuntimeError(msg)
@@ -597,8 +844,8 @@ class AudioEngine:
                     shutil.copy2(current, stage_export_dir / Path(current).name)
             suffix = "-".join(str(i) for i in scheme_ids)
             last_scheme = SCHEME_BY_ID[int(scheme_ids[-1])]
-            ext = "wav"
-            out = out_dir / f"{base}_{suffix}.wav"
+            ext = "mp3" if str(fmt).lower() == "mp3" else "wav"
+            out = out_dir / f"{base}_{suffix}.{ext}"
             if progress:
                 progress(92, "导出最终文件")
             self._export_or_copy_final(Path(current), out, ext, source_duration if len(scheme_ids) > 1 else 0)
@@ -608,6 +855,20 @@ class AudioEngine:
                 if progress:
                     progress(96, f"{str(platform_code).upper()} 快捷组合整理")
                 out, ext = self._apply_platform_preset(out, platform_code, ext)
+            polish_mode = self._polish_mode_for_schemes(scheme_ids)
+            self._apply_multiband_natural_polish(out, polish_mode)
+            self._reserve_output_headroom(out, polish_mode)
+            self.ensure_audible_output(out)
+            report = self.quality_report(src, out)
+            self.log(
+                "本地质检：%s 分，%s，平均响度 %s，峰值 %s"
+                % (
+                    report.score,
+                    report.note,
+                    "--" if report.mean_db is None else f"{report.mean_db:.1f} dB",
+                    "--" if report.max_db is None else f"{report.max_db:.1f} dB",
+                )
+            )
             if not out.exists() or out.stat().st_size <= 1024:
                 raise RuntimeError("最终文件无效")
             if progress:
