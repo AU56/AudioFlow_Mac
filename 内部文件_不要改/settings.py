@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "AudioFlow Studio"
-APP_VERSION = "3.6.7"
+APP_VERSION = "3.6.8"
 
 PUBLIC_LICENSE_SERVER_URL = os.getenv("AUDIOFLOW_LICENSE_SERVER", "http://122.51.121.200:13706")
 LOCAL_LICENSE_SERVER_URL = "http://127.0.0.1:5000"
