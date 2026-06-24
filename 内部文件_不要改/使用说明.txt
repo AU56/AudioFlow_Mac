@@ -1,0 +1,12 @@
+AudioFlow Studio Mac 使用说明
+
+1. 先解压 AudioFlow_Studio_MAC_v3.6.7.zip。
+2. 解压后双击打开 AudioFlow Studio.app。
+3. 不要进入 Contents 文件夹，也不要手动点击 Contents/MacOS 里面的文件。
+4. 如果提示无法打开，先右键 AudioFlow Studio.app，选择“打开”，再点“打开”。
+5. 如果仍提示安全限制：打开“系统设置 - 隐私与安全性”，找到 AudioFlow Studio，点击“仍要打开”。
+6. 打开软件后输入卡密激活，再导入歌曲使用。
+7. 如果出现闪退、打不开、无法激活，请把报错截图、电脑系统版本、卡密发给售后处理。
+
+问题咨询：Zhwdh141319
+添加备注：AI原创

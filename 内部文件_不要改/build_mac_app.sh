@@ -44,6 +44,7 @@ if [ ! -f "assets/audioflow.icns" ] && [ -f "assets/audioflow_256.png" ] && comm
   sips -z 128 128   assets/audioflow_256.png --out assets/audioflow.iconset/icon_128x128.png >/dev/null
   sips -z 256 256   assets/audioflow_256.png --out assets/audioflow.iconset/icon_128x128@2x.png >/dev/null
   sips -z 256 256   assets/audioflow_256.png --out assets/audioflow.iconset/icon_256x256.png >/dev/null
+  sips -z 512 512   assets/audioflow_256.png --out assets/audioflow.iconset/icon_256x256@2x.png >/dev/null
   sips -z 512 512   assets/audioflow_256.png --out assets/audioflow.iconset/icon_512x512.png >/dev/null
   cp assets/audioflow_256.png assets/audioflow.iconset/icon_512x512@2x.png
   iconutil -c icns assets/audioflow.iconset -o assets/audioflow.icns
@@ -67,8 +68,6 @@ if [ -f "assets/audioflow.icns" ]; then
     --add-binary "${FFPROBE_BIN}:tools/macos" \
     --add-binary "${SOX_BIN}:tools/macos" \
     --add-data "assets/audioflow.ico:assets" \
-    --add-data "main.raw:." \
-    --add-data "engine.raw:." \
     --add-data "schemes.py:." \
     --add-data "settings.py:." \
     main.py
@@ -77,10 +76,8 @@ else
     --name "$APP_NAME" \
     --add-binary "${FFMPEG_BIN}:tools/macos" \
     --add-binary "${FFPROBE_BIN}:tools/macos" \
-    --add-binary "${SOX_BIN}:tools/macos" \
     --add-data "assets/audioflow.ico:assets" \
-    --add-data "main.raw:." \
-    --add-data "engine.raw:." \
+    --add-binary "${SOX_BIN}:tools/macos" \
     --add-data "schemes.py:." \
     --add-data "settings.py:." \
     main.py
@@ -91,5 +88,14 @@ if [ ! -d "$DIST_APP" ]; then
   exit 1
 fi
 
-ditto -c -k --sequesterRsrc --keepParent "$DIST_APP" "$ZIP_NAME"
+PAYLOAD_DIR="release_payload"
+rm -rf "$PAYLOAD_DIR"
+mkdir -p "$PAYLOAD_DIR"
+cp -R "$DIST_APP" "$PAYLOAD_DIR/"
+if [ -f "使用说明.txt" ]; then
+  cp "使用说明.txt" "$PAYLOAD_DIR/"
+fi
+
+(cd "$PAYLOAD_DIR" && ditto -c -k --sequesterRsrc . "../$ZIP_NAME")
 echo "SUCCESS: $ZIP_NAME"
+echo "Put $ZIP_NAME into backend data/updates with version.txt."
