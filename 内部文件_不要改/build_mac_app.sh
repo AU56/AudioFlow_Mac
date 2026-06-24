@@ -92,8 +92,8 @@ PAYLOAD_DIR="release_payload"
 rm -rf "$PAYLOAD_DIR"
 mkdir -p "$PAYLOAD_DIR"
 cp -R "$DIST_APP" "$PAYLOAD_DIR/"
-if [ -f "使用说明.txt" ]; then
-  cp "使用说明.txt" "$PAYLOAD_DIR/"
+if [ -f "README_FIRST.txt" ]; then
+  cp "README_FIRST.txt" "$PAYLOAD_DIR/"
 fi
 
 (cd "$PAYLOAD_DIR" && ditto -c -k --sequesterRsrc . "../$ZIP_NAME")
