@@ -19,7 +19,19 @@ UPDATE_INFO_URL = os.getenv(
 
 CONTACT_TEXT = "问题咨询：Zhwdh141319\n备注：AI原创"
 VERIFY_SECRET = os.getenv("AUDIOFLOW_VERIFY_SECRET", "change-this-signing-secret")
-SUPPORTED_AUDIO_EXTS = {".mp3"}
+SUPPORTED_AUDIO_EXTS = {
+    ".mp3",
+    ".wav",
+    ".flac",
+    ".m4a",
+    ".aac",
+    ".ogg",
+    ".wma",
+    ".aiff",
+    ".aif",
+    ".ape",
+    ".alac",
+}
 DEFAULT_OUTPUT_DIR = str(Path.home() / "Desktop" / "AudioFlow_Output")
 
 
