@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -142,8 +142,14 @@ codesign --verify --deep --strict "$DIST_APP"
 mkdir -p "$PAYLOAD_DIR"
 cp -R "$DIST_APP" "$PAYLOAD_DIR/"
 cp "README_Mac.txt" "$PAYLOAD_DIR/"
+if [ -f "Open_AudioFlow.command" ]; then
+  chmod +x "Open_AudioFlow.command"
+  cp "Open_AudioFlow.command" "$PAYLOAD_DIR/"
+  chmod +x "$PAYLOAD_DIR/Open_AudioFlow.command"
+fi
 
 xattr -cr "$PAYLOAD_DIR" || true
 (cd "$PAYLOAD_DIR" && ditto -c -k --sequesterRsrc . "../$ZIP_NAME")
 
 echo "SUCCESS: $ZIP_NAME"
+
