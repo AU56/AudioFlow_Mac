@@ -4,17 +4,19 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP_NAME="AudioFlow Studio"
+APP_VERSION="3.6.14"
 DIST_APP="dist/${APP_NAME}.app"
 ZIP_NAME="AudioFlow_Studio_Mac.zip"
+PAYLOAD_DIR="release_payload"
 
-echo "[AudioFlow] Building macOS app..."
+echo "[AudioFlow] Building macOS app ${APP_VERSION}..."
 
 if command -v /opt/homebrew/bin/python3 >/dev/null 2>&1; then
-  PYTHON_BIN="/opt/homebrew/bin/python3"
+  PYTHON_BASE="/opt/homebrew/bin/python3"
 elif command -v /usr/local/bin/python3 >/dev/null 2>&1; then
-  PYTHON_BIN="/usr/local/bin/python3"
+  PYTHON_BASE="/usr/local/bin/python3"
 elif command -v python3 >/dev/null 2>&1; then
-  PYTHON_BIN="$(command -v python3)"
+  PYTHON_BASE="$(command -v python3)"
 else
   echo "ERROR: python3 not found."
   exit 1
@@ -51,36 +53,73 @@ if [ ! -f "assets/audioflow.icns" ] && [ -f "assets/audioflow_256.png" ] && comm
 fi
 
 VENV_DIR=".venv-build-macos"
-"$PYTHON_BIN" -m venv "$VENV_DIR"
+"$PYTHON_BASE" -m venv "$VENV_DIR"
 PYTHON_BIN="$PWD/$VENV_DIR/bin/python"
 "$PYTHON_BIN" -m pip install --upgrade pip setuptools wheel
 "$PYTHON_BIN" -m pip install -r requirements_client.txt pyinstaller
 
-export PATH="$PWD/$VENV_DIR/bin:$(dirname "$PYTHON_BIN"):$PATH"
+export PATH="$PWD/$VENV_DIR/bin:$PATH"
 
-rm -rf build dist "$ZIP_NAME"
+rm -rf build dist "$PAYLOAD_DIR" "$ZIP_NAME"
+
+DATA_ARGS=()
+for f in main.raw engine.raw *.rawcode; do
+  if [ -f "$f" ]; then
+    DATA_ARGS+=(--add-data "$f:.")
+  fi
+done
+if [ -d "assets" ]; then
+  DATA_ARGS+=(--add-data "assets:assets")
+fi
+
+COMMON_ARGS=(
+  --noconfirm
+  --clean
+  --windowed
+  --name "$APP_NAME"
+  --add-binary "${FFMPEG_BIN}:tools/macos"
+  --add-binary "${FFPROBE_BIN}:tools/macos"
+  --add-binary "${SOX_BIN}:tools/macos"
+  --add-binary "${SOX_BIN}:tools/sox-14-4-2"
+  --hidden-import ctypes
+  --hidden-import ctypes.wintypes
+  --hidden-import concurrent
+  --hidden-import concurrent.futures
+  --hidden-import dataclasses
+  --hidden-import hashlib
+  --hidden-import hmac
+  --hidden-import json
+  --hidden-import marshal
+  --hidden-import platform
+  --hidden-import requests
+  --hidden-import tempfile
+  --hidden-import threading
+  --hidden-import typing
+  --hidden-import uuid
+  --hidden-import zipfile
+  --hidden-import PySide6.QtCore
+  --hidden-import PySide6.QtGui
+  --hidden-import PySide6.QtWidgets
+  --hidden-import engine
+  --hidden-import license_client
+  --hidden-import platform_presets
+  --hidden-import raw_loader
+  --hidden-import schemes
+  --hidden-import security_guard
+  --hidden-import settings
+  --hidden-import updater
+  --collect-all requests
+  --collect-all urllib3
+  --collect-all certifi
+  --collect-all idna
+  --collect-all charset_normalizer
+  "${DATA_ARGS[@]}"
+)
 
 if [ -f "assets/audioflow.icns" ]; then
-  pyinstaller --noconfirm --clean --windowed \
-    --name "$APP_NAME" \
-    --icon "assets/audioflow.icns" \
-    --add-binary "${FFMPEG_BIN}:tools/macos" \
-    --add-binary "${FFPROBE_BIN}:tools/macos" \
-    --add-binary "${SOX_BIN}:tools/macos" \
-    --add-data "assets/audioflow.ico:assets" \
-    --add-data "schemes.py:." \
-    --add-data "settings.py:." \
-    main.py
+  pyinstaller "${COMMON_ARGS[@]}" --icon "assets/audioflow.icns" main.py
 else
-  pyinstaller --noconfirm --clean --windowed \
-    --name "$APP_NAME" \
-    --add-binary "${FFMPEG_BIN}:tools/macos" \
-    --add-binary "${FFPROBE_BIN}:tools/macos" \
-    --add-data "assets/audioflow.ico:assets" \
-    --add-binary "${SOX_BIN}:tools/macos" \
-    --add-data "schemes.py:." \
-    --add-data "settings.py:." \
-    main.py
+  pyinstaller "${COMMON_ARGS[@]}" main.py
 fi
 
 if [ ! -d "$DIST_APP" ]; then
@@ -88,14 +127,23 @@ if [ ! -d "$DIST_APP" ]; then
   exit 1
 fi
 
-PAYLOAD_DIR="release_payload"
-rm -rf "$PAYLOAD_DIR"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName ${APP_NAME}" "$DIST_APP/Contents/Info.plist" || true
+/usr/libexec/PlistBuddy -c "Set :CFBundleName ${APP_NAME}" "$DIST_APP/Contents/Info.plist" || true
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.audioflow.studio" "$DIST_APP/Contents/Info.plist" || true
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${APP_VERSION}" "$DIST_APP/Contents/Info.plist" || true
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${APP_VERSION}" "$DIST_APP/Contents/Info.plist" || true
+
+find "$DIST_APP/Contents" -path "*/tools/macos/*" -type f -exec chmod +x {} \;
+find "$DIST_APP/Contents" -path "*/tools/sox-14-4-2/*" -type f -exec chmod +x {} \;
+
+codesign --force --deep --sign - "$DIST_APP"
+codesign --verify --deep --strict "$DIST_APP"
+
 mkdir -p "$PAYLOAD_DIR"
 cp -R "$DIST_APP" "$PAYLOAD_DIR/"
-if [ -f "README_FIRST.txt" ]; then
-  cp "README_FIRST.txt" "$PAYLOAD_DIR/"
-fi
+cp "README_Mac.txt" "$PAYLOAD_DIR/"
 
+xattr -cr "$PAYLOAD_DIR" || true
 (cd "$PAYLOAD_DIR" && ditto -c -k --sequesterRsrc . "../$ZIP_NAME")
+
 echo "SUCCESS: $ZIP_NAME"
-echo "Put $ZIP_NAME into backend data/updates with version.txt."
