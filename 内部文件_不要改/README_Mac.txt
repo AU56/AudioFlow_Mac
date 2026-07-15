@@ -2,14 +2,16 @@ AudioFlow Studio Mac 使用说明
 
 一、推荐打开方式
 1. 解压压缩包，不要直接在压缩包预览里打开。
-2. 先双击 Open_AudioFlow.command。
-3. 弹出终端窗口后，等待它自动打开 AudioFlow Studio。
+2. 打开解压出来的文件夹。
+3. 首次使用先双击“首次打开点我.command”。
+4. 弹出终端窗口后，等待它自动打开 AudioFlow Studio。
 4. 如果系统询问是否允许终端打开软件，选择允许。
 
 二、如果还是提示无法验证
 1. 不要点“移到废纸篓”。
-2. 按住 Control 键点击 AudioFlow Studio，选择“打开”，弹窗里再次选择“打开”。
+2. 回到文件夹里再次双击“首次打开点我.command”。
 3. 如果仍然无法打开，进入“系统设置 - 隐私与安全性”，找到 AudioFlow Studio，选择“仍要打开”。
+4. 或按住 Control 键点击 AudioFlow Studio，选择“打开”，弹窗里再次选择“打开”。
 
 三、基本使用
 1. 打开软件后先完成卡密激活。
