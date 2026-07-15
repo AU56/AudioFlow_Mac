@@ -94,7 +94,7 @@ import schemes
 bad = [
     str(s.get("index"))
     for s in schemes.SCHEMES
-    if "rubberband" in str(s.get("af", "")).lower()
+    if "rubberband" in str(s.get("af", "")).lower() or "resampler=soxr" in str(s.get("af", "")).lower()
 ]
 if bad:
     raise SystemExit("ERROR: macOS ffmpeg filter compatibility failed for schemes: " + ",".join(bad))
