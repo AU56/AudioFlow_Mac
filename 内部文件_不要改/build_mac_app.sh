@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP_NAME="AudioFlow Studio"
-APP_VERSION="3.6.15"
+APP_VERSION="3.6.16"
 DIST_APP="dist/${APP_NAME}.app"
 ZIP_NAME="AudioFlow_Studio_Mac.zip"
 PAYLOAD_DIR="release_payload"
@@ -171,11 +171,9 @@ codesign --verify --deep --strict "$DIST_APP"
 
 mkdir -p "$PAYLOAD_DIR"
 cp -R "$DIST_APP" "$PAYLOAD_DIR/"
-cp "README_Mac.txt" "$PAYLOAD_DIR/"
-if [ -f "Open_AudioFlow.command" ]; then
-  chmod +x "Open_AudioFlow.command"
-  cp "Open_AudioFlow.command" "$PAYLOAD_DIR/"
-  chmod +x "$PAYLOAD_DIR/Open_AudioFlow.command"
+if [ -f "README_Mac.txt" ]; then
+  mkdir -p "$PAYLOAD_DIR/${APP_NAME}.app/Contents/Resources"
+  cp "README_Mac.txt" "$PAYLOAD_DIR/${APP_NAME}.app/Contents/Resources/README_Mac.txt"
 fi
 
 xattr -cr "$PAYLOAD_DIR" || true
