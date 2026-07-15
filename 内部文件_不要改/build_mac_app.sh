@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP_NAME="AudioFlow Studio"
-APP_VERSION="3.6.16"
+APP_VERSION="3.6.17"
 DIST_APP="dist/${APP_NAME}.app"
 ZIP_NAME="AudioFlow_Studio_Mac.zip"
 PAYLOAD_DIR="release_payload"
@@ -88,6 +88,18 @@ print("[AudioFlow] PySide6 Qt:", QtCore.qVersion())
 print("[AudioFlow] PySide6 import check: OK")
 PY
 
+"$PYTHON_BIN" - <<'PY'
+import schemes
+bad = [
+    str(s.get("index"))
+    for s in schemes.SCHEMES
+    if "rubberband" in str(s.get("af", "")).lower()
+]
+if bad:
+    raise SystemExit("ERROR: macOS ffmpeg filter compatibility failed for schemes: " + ",".join(bad))
+print("[AudioFlow] macOS ffmpeg filter compatibility: OK")
+PY
+
 export PATH="$PWD/$VENV_DIR/bin:$PATH"
 
 rm -rf build dist "$PAYLOAD_DIR" "$ZIP_NAME"
@@ -162,6 +174,12 @@ fi
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.audioflow.studio" "$DIST_APP/Contents/Info.plist" || true
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${APP_VERSION}" "$DIST_APP/Contents/Info.plist" || true
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${APP_VERSION}" "$DIST_APP/Contents/Info.plist" || true
+/usr/libexec/PlistBuddy -c "Add :NSDesktopFolderUsageDescription string AudioFlow Studio 需要读取和保存您选择的桌面音频文件。" "$DIST_APP/Contents/Info.plist" || true
+/usr/libexec/PlistBuddy -c "Add :NSDocumentsFolderUsageDescription string AudioFlow Studio 需要读取和保存您选择的文稿音频文件。" "$DIST_APP/Contents/Info.plist" || true
+/usr/libexec/PlistBuddy -c "Add :NSDownloadsFolderUsageDescription string AudioFlow Studio 需要读取和保存您选择的下载音频文件。" "$DIST_APP/Contents/Info.plist" || true
+/usr/libexec/PlistBuddy -c "Set :NSDesktopFolderUsageDescription AudioFlow Studio 需要读取和保存您选择的桌面音频文件。" "$DIST_APP/Contents/Info.plist" || true
+/usr/libexec/PlistBuddy -c "Set :NSDocumentsFolderUsageDescription AudioFlow Studio 需要读取和保存您选择的文稿音频文件。" "$DIST_APP/Contents/Info.plist" || true
+/usr/libexec/PlistBuddy -c "Set :NSDownloadsFolderUsageDescription AudioFlow Studio 需要读取和保存您选择的下载音频文件。" "$DIST_APP/Contents/Info.plist" || true
 
 find "$DIST_APP/Contents" -path "*/tools/macos/*" -type f -exec chmod +x {} \;
 find "$DIST_APP/Contents" -path "*/tools/sox-14-4-2/*" -type f -exec chmod +x {} \;
