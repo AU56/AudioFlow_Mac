@@ -4,10 +4,10 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP_NAME="AudioFlow Studio"
-APP_VERSION="3.6.18"
+APP_VERSION="3.6.19"
 DIST_APP="dist/${APP_NAME}.app"
 ZIP_NAME="AudioFlow_Studio_Mac.zip"
-PAYLOAD_DIR="release_payload"
+PAYLOAD_DIR="AudioFlow_Studio_macOS正式版_v${APP_VERSION}"
 
 _echo_step() {
   echo "[AudioFlow] $1"
@@ -274,11 +274,16 @@ codesign --verify --deep --strict "$DIST_APP"
 mkdir -p "$PAYLOAD_DIR"
 cp -R "$DIST_APP" "$PAYLOAD_DIR/"
 if [ -f "README_Mac.txt" ]; then
+  cp "README_Mac.txt" "$PAYLOAD_DIR/使用说明.txt"
   mkdir -p "$PAYLOAD_DIR/${APP_NAME}.app/Contents/Resources"
   cp "README_Mac.txt" "$PAYLOAD_DIR/${APP_NAME}.app/Contents/Resources/README_Mac.txt"
 fi
+if [ -f "Open_AudioFlow.command" ]; then
+  cp "Open_AudioFlow.command" "$PAYLOAD_DIR/首次打开点我.command"
+  chmod +x "$PAYLOAD_DIR/首次打开点我.command"
+fi
 
 xattr -cr "$PAYLOAD_DIR" || true
-(cd "$PAYLOAD_DIR" && ditto -c -k --sequesterRsrc . "../$ZIP_NAME")
+ditto -c -k --sequesterRsrc "$PAYLOAD_DIR" "$ZIP_NAME"
 
 _echo_step "SUCCESS: $ZIP_NAME"
