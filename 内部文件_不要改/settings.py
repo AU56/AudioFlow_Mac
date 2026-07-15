@@ -5,4 +5,4 @@ from raw_loader import exec_raw
 
 exec_raw("settings.rawcode", globals())
 
-APP_VERSION = "3.6.19"
+APP_VERSION = "3.6.20"
