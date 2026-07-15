@@ -22,11 +22,14 @@ def _replace_rubberband_filter(af):
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
+    text = text.replace(":resampler=soxr", "")
     return text
 
 
 for _scheme in SCHEMES:
-    if str(_scheme.get("engine", "")).lower() == "ffmpeg" and "rubberband" in str(_scheme.get("af", "")):
+    if str(_scheme.get("engine", "")).lower() == "ffmpeg" and (
+        "rubberband" in str(_scheme.get("af", "")) or "resampler=soxr" in str(_scheme.get("af", ""))
+    ):
         _scheme["af"] = _replace_rubberband_filter(_scheme.get("af", ""))
 
 SCHEME_BY_ID = {scheme["index"]: scheme for scheme in SCHEMES}
