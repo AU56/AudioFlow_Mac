@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP_NAME="AudioFlow Studio"
-APP_VERSION="3.6.17"
+APP_VERSION="3.6.18"
 DIST_APP="dist/${APP_NAME}.app"
 ZIP_NAME="AudioFlow_Studio_Mac.zip"
 PAYLOAD_DIR="release_payload"
@@ -54,6 +54,7 @@ fi
 FFMPEG_BIN="$(command -v ffmpeg)"
 FFPROBE_BIN="$(command -v ffprobe)"
 SOX_BIN="$(command -v sox)"
+export FFMPEG_BIN FFPROBE_BIN SOX_BIN
 
 if [ ! -f "assets/audioflow.icns" ] && [ -f "assets/audioflow_256.png" ] && command -v iconutil >/dev/null 2>&1; then
   rm -rf assets/audioflow.iconset
@@ -98,6 +99,89 @@ bad = [
 if bad:
     raise SystemExit("ERROR: macOS ffmpeg filter compatibility failed for schemes: " + ",".join(bad))
 print("[AudioFlow] macOS ffmpeg filter compatibility: OK")
+PY
+
+"$PYTHON_BIN" - <<'PY'
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+
+import schemes
+
+
+ffmpeg = os.environ["FFMPEG_BIN"]
+sox = os.environ["SOX_BIN"]
+
+
+def run(cmd, title):
+    cp = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if cp.returncode != 0:
+        print(f"[AudioFlow] Scheme smoke failed: {title}")
+        print(cp.stderr[-3000:])
+        raise SystemExit(cp.returncode)
+
+
+with tempfile.TemporaryDirectory(prefix="audioflow_scheme_smoke_") as td:
+    td = Path(td)
+    src = td / "input.wav"
+    run(
+        [
+            ffmpeg,
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=220:duration=8",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=880:duration=8",
+            "-filter_complex",
+            "[0:a][1:a]amix=inputs=2:duration=longest,volume=0.35",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
+            "-c:a",
+            "pcm_s16le",
+            str(src),
+        ],
+        "create test audio",
+    )
+
+    passed = []
+    for scheme in schemes.SCHEMES:
+        idx = int(scheme["index"])
+        engine = str(scheme.get("engine", "")).lower()
+        if engine == "sox":
+            out = td / f"scheme_{idx:02d}.wav"
+            cmd = [sox, str(src), str(out)] + [str(x) for x in scheme.get("sox_args", [])]
+        elif engine == "ffmpeg":
+            out = td / f"scheme_{idx:02d}.mp3" if scheme.get("force_mp3") else td / f"scheme_{idx:02d}.wav"
+            cmd = [
+                ffmpeg,
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(src),
+                "-af",
+                str(scheme.get("af", "")),
+            ] + [str(x) for x in scheme.get("extra_args", [])] + [str(out)]
+        else:
+            raise SystemExit(f"ERROR: unknown scheme engine {idx}: {engine}")
+
+        run(cmd, f"{idx:02d} {scheme.get('name', '')}")
+        if not out.exists() or out.stat().st_size <= 1024:
+            raise SystemExit(f"ERROR: scheme {idx:02d} produced empty output")
+        passed.append(f"{idx:02d}")
+
+print("[AudioFlow] all schemes smoke test passed:", ",".join(passed))
 PY
 
 export PATH="$PWD/$VENV_DIR/bin:$PATH"
