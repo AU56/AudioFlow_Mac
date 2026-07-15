@@ -4,23 +4,42 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP_NAME="AudioFlow Studio"
-APP_VERSION="3.6.14"
+APP_VERSION="3.6.15"
 DIST_APP="dist/${APP_NAME}.app"
 ZIP_NAME="AudioFlow_Studio_Mac.zip"
 PAYLOAD_DIR="release_payload"
 
-echo "[AudioFlow] Building macOS app ${APP_VERSION}..."
+_echo_step() {
+  echo "[AudioFlow] $1"
+}
 
-if command -v /opt/homebrew/bin/python3 >/dev/null 2>&1; then
+_echo_step "Building macOS app ${APP_VERSION}..."
+
+if [ -n "${AUDIOFLOW_BUILD_PYTHON:-}" ] && [ -x "${AUDIOFLOW_BUILD_PYTHON}" ]; then
+  PYTHON_BASE="${AUDIOFLOW_BUILD_PYTHON}"
+elif [ -n "${pythonLocation:-}" ] && [ -x "${pythonLocation}/bin/python3" ]; then
+  PYTHON_BASE="${pythonLocation}/bin/python3"
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_BASE="$(command -v python3)"
+elif command -v /opt/homebrew/bin/python3 >/dev/null 2>&1; then
   PYTHON_BASE="/opt/homebrew/bin/python3"
 elif command -v /usr/local/bin/python3 >/dev/null 2>&1; then
   PYTHON_BASE="/usr/local/bin/python3"
-elif command -v python3 >/dev/null 2>&1; then
-  PYTHON_BASE="$(command -v python3)"
 else
   echo "ERROR: python3 not found."
   exit 1
 fi
+
+_echo_step "Selected Python: ${PYTHON_BASE}"
+"${PYTHON_BASE}" --version
+"${PYTHON_BASE}" - <<'PY'
+import platform
+import sys
+print("[AudioFlow] Python detail:", sys.version.replace("\n", " "))
+print("[AudioFlow] Machine:", platform.machine())
+if sys.version_info[:2] != (3, 12):
+    raise SystemExit("ERROR: macOS client must be built with Python 3.12.x. Refusing this runtime.")
+PY
 
 if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
   echo "ERROR: ffmpeg/ffprobe not found. Install with: brew install ffmpeg"
@@ -53,10 +72,21 @@ if [ ! -f "assets/audioflow.icns" ] && [ -f "assets/audioflow_256.png" ] && comm
 fi
 
 VENV_DIR=".venv-build-macos"
+rm -rf "$VENV_DIR"
 "$PYTHON_BASE" -m venv "$VENV_DIR"
 PYTHON_BIN="$PWD/$VENV_DIR/bin/python"
 "$PYTHON_BIN" -m pip install --upgrade pip setuptools wheel
-"$PYTHON_BIN" -m pip install -r requirements_client.txt pyinstaller
+"$PYTHON_BIN" -m pip install -r requirements_client.txt
+
+"$PYTHON_BIN" - <<'PY'
+import marshal
+from pathlib import Path
+for name in ("main.raw", "engine.raw"):
+    marshal.loads(Path(name).read_bytes())
+from PySide6 import QtCore, QtWidgets
+print("[AudioFlow] PySide6 Qt:", QtCore.qVersion())
+print("[AudioFlow] PySide6 import check: OK")
+PY
 
 export PATH="$PWD/$VENV_DIR/bin:$PATH"
 
@@ -117,9 +147,9 @@ COMMON_ARGS=(
 )
 
 if [ -f "assets/audioflow.icns" ]; then
-  pyinstaller "${COMMON_ARGS[@]}" --icon "assets/audioflow.icns" main.py
+  "$PYTHON_BIN" -m PyInstaller "${COMMON_ARGS[@]}" --icon "assets/audioflow.icns" main.py
 else
-  pyinstaller "${COMMON_ARGS[@]}" main.py
+  "$PYTHON_BIN" -m PyInstaller "${COMMON_ARGS[@]}" main.py
 fi
 
 if [ ! -d "$DIST_APP" ]; then
@@ -151,5 +181,4 @@ fi
 xattr -cr "$PAYLOAD_DIR" || true
 (cd "$PAYLOAD_DIR" && ditto -c -k --sequesterRsrc . "../$ZIP_NAME")
 
-echo "SUCCESS: $ZIP_NAME"
-
+_echo_step "SUCCESS: $ZIP_NAME"
